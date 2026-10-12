@@ -91,6 +91,11 @@ packages (the versions in `roundcube/composer.lock`), npm (`less`, for the
 calendar's styles) and Kolab's git (git.kolab.org, the calendar plugins at
 a pinned commit).
 
+Releases are on the repository's releases page
+(https://github.com/the-boring-crocodile/boring-mailstack/releases): the
+tarball, its `.sha256`, and the checksum of its `MANIFEST.sha256`, which a
+build of your own from the tag must match (below, "Building a release").
+
 1. **Check and unpack the release** as root into a fresh, empty directory
    (deploy refuses files that are not in the release's manifest; unpacked
    by root, no other user can change the files root will run):

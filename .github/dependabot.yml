@@ -1,0 +1,35 @@
+# Monthly, grouped: one pull request per ecosystem. Every base image is
+# pinned by digest and every package by lock file (DECISIONS.md); these
+# pull requests propose the next pins, and tests/unit/run.sh runs on them.
+# Merged only after the acceptance test (DEVELOPMENT.md).
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories:
+      - /bridge
+      - /getmail
+      - /init
+      - /mail-provenance
+      - /prepare
+      - /relay
+      - /resieve
+      - /roundcube
+      - /tests/browser
+    schedule: { interval: monthly }
+    groups: { base-images: { patterns: ["*"] } }
+  - package-ecosystem: docker-compose
+    directories: ["/", "/demo"]
+    schedule: { interval: monthly }
+    groups: { compose-images: { patterns: ["*"] } }
+  - package-ecosystem: composer
+    directory: /roundcube
+    schedule: { interval: monthly }
+    groups: { roundcube: { patterns: ["*"] } }
+  - package-ecosystem: cargo
+    directory: /resieve
+    schedule: { interval: monthly }
+    groups: { resieve: { patterns: ["*"] } }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+    groups: { actions: { patterns: ["*"] } }
