@@ -1,0 +1,37 @@
+# accounts.yaml: one entry per mailbox. The key (here "alice") is the
+# account id; the webmail login is the address. Copy to accounts.yaml in
+# the installation directory (mode 0600) and fill in your providers; never
+# commit real credentials.
+version: 1
+accounts:
+  alice:
+    address: alice@example.org
+    inbound:                    # where getmail fetches from (nothing is deleted there)
+      active: true
+      host: imap.example.org
+      port: 993
+      tls: implicit
+      username: alice@example.org
+      password: CHANGE-ME
+    outbound:                   # where the relay sends this address's mail
+      active: true
+      host: smtp.example.org
+      port: 465
+      tls: implicit
+      username: alice@example.org
+      password: CHANGE-ME
+    # Your filter (Sieve, edited in webmail under Settings -> Filters):
+    inbound_sieve:              # sorts mail as it is fetched
+      enabled: true
+      folders: [INBOX]          # INBOX and/or Junk (the provider's spam folder):
+                                # their mail goes through the filter; no rule
+                                # matches -> INBOX (from Junk: -> Junk). Mail
+                                # from any other provider folder arrives in the
+                                # same folder and counts as sorted by you.
+                                # Leaving INBOX out imports it unfiltered (no
+                                # spam filter either). Every provider folder is
+                                # fetched; which not, and which is Junk:
+                                # folders.yaml.
+    resieve:                    # re-sorts mail already here after you change
+      enabled: true             # the filter; never moves mail you sorted
+      # never_move_from: [Sent, Drafts, Trash]   # default: Sent, Drafts, Trash, Junk

@@ -1,0 +1,29 @@
+BORING PIRATES — SECURITY AWARENESS
+Final report: Pond Ltd
+Inspector: Mlle Em, Privateer
+
+VERDICT: SEAWORTHY, BARELY.
+
+Hull (systems):           sound, newly built, one barnacle from 2009 (removed)
+Rigging (process):        meetings scheduled; meetings not held
+Crew (people):            four; one awake at 04:12; one right in week one
+Navigation (management):  by mood board
+Provisions:               coffee, excessive; honey, recently
+
+NOTABLE EVENTS
+  Thursday 03:00: server-wide rule of 2009 diverted 214 messages to
+  management@/Later. Found, fixed and every message restored by 04:12,
+  using the system's own record of each message's provenance.
+
+COMMENDATIONS
+  Mr Crocodile, Development — for holding the ship together.
+  Mr Otter, Quality Assurance — for the chart, which was correct.
+  Brog, Plants — for asking the only question that mattered, early.
+
+RECOMMENDATIONS
+  1. Answer your developer.
+  2. Read your QA register.
+  3. Retire the folder called "Later".
+  4. Put Plants on the distribution list permanently.
+
+It has been an honour to inspect you.

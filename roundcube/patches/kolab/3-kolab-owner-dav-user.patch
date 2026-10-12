@@ -1,0 +1,129 @@
+From e15d12a0ecf7160139885c7846b5ba701d886423 Mon Sep 17 00:00:00 2001
+From: The Boring Crocodile <crocodile@heilig.org>
+Date: Wed, 7 Oct 2026 17:22:02 +0200
+Subject: [PATCH] Recognize own DAV folders when DAV user differs from login
+
+get_namespace() compared a folder's owner with the Roundcube login only.
+With a CalDAV server where the user has another name (e.g. user@example.org
+in Roundcube, user at the server) every own folder was "other":
+invitations found no calendar to save to, folder names got the owner
+prefixed, and the rights of each such folder were requested on every
+request. The current-user-principal (RFC 5397), already requested during
+discovery, now identifies the user as well.
+
+Prepared by an AI agent (Claude, Anthropic); reviewed by Wald.
+---
+ .../drivers/caldav/caldav_calendar.php        | 11 ++++++
+ plugins/libkolab/lib/kolab_dav_client.php     | 38 +++++++++++++++++++
+ .../libkolab/lib/kolab_storage_dav_folder.php |  8 ++--
+ 3 files changed, 54 insertions(+), 3 deletions(-)
+
+diff --git a/plugins/calendar/drivers/caldav/caldav_calendar.php b/plugins/calendar/drivers/caldav/caldav_calendar.php
+index d84e351b..447c6883 100644
+--- a/plugins/calendar/drivers/caldav/caldav_calendar.php
++++ b/plugins/calendar/drivers/caldav/caldav_calendar.php
+@@ -89,6 +89,17 @@ class caldav_calendar extends kolab_storage_dav_folder
+         }
+     }
+ 
++    /**
++     * Get the folder's namespace from the wrapped storage folder, which has
++     * the DAV client (needed to know the current user, see get_namespace()).
++     *
++     * @return string Name of the namespace (personal, other, shared)
++     */
++    public function get_namespace()
++    {
++        return $this->storage ? $this->storage->get_namespace() : parent::get_namespace();
++    }
++
+     /**
+      * Getter for the folder name
+      *
+diff --git a/plugins/libkolab/lib/kolab_dav_client.php b/plugins/libkolab/lib/kolab_dav_client.php
+index 1824ecf0..48d8795a 100644
+--- a/plugins/libkolab/lib/kolab_dav_client.php
++++ b/plugins/libkolab/lib/kolab_dav_client.php
+@@ -51,6 +51,9 @@ class kolab_dav_client
+     protected $responseHeaders = [];
+     protected $responseCode = null;
+ 
++    /** @var string|null|false The current user's ID at the DAV server (false: not looked up yet) */
++    protected $currentUserId = false;
++
+     /**
+      * Object constructor
+      */
+@@ -214,6 +217,9 @@ class kolab_dav_client
+             }
+         }
+ 
++        // Current user's principal (RFC 5397); own folders are owned by it (see currentUserId())
++        $homes['current-user-principal'] = $principal_href;
++
+         if ($cache) {
+             $cache->set($cache_key, $homes);
+         }
+@@ -221,6 +227,38 @@ class kolab_dav_client
+         return $homes;
+     }
+ 
++    /**
++     * The current user's ID on the DAV server: the last segment of the
++     * current-user-principal href (as kolab_storage_dav_folder::get_owner()
++     * takes it from a folder's owner). It may differ from the Roundcube
++     * login, e.g. a mail address in Roundcube and a user name at the server.
++     *
++     * @return string|null User ID, Null if not known
++     */
++    public function currentUserId()
++    {
++        if ($this->currentUserId !== false) {
++            return $this->currentUserId;
++        }
++
++        $homes = $this->discover();
++
++        // Discovery cached before the principal was kept there: refresh it once
++        if (is_array($homes) && !array_key_exists('current-user-principal', $homes)) {
++            $homes = $this->discover(true);
++        }
++
++        $principal = is_array($homes) ? ($homes['current-user-principal'] ?? null) : null;
++        $this->currentUserId = null;
++
++        if (is_string($principal) && strlen(trim($principal, '/'))) {
++            $path = explode('/', trim($principal, '/'));
++            $this->currentUserId = rawurldecode(end($path));
++        }
++
++        return $this->currentUserId;
++    }
++
+     /**
+      * Get user home folder of specified type
+      *
+diff --git a/plugins/libkolab/lib/kolab_storage_dav_folder.php b/plugins/libkolab/lib/kolab_storage_dav_folder.php
+index 21e00cff..e2c0322e 100644
+--- a/plugins/libkolab/lib/kolab_storage_dav_folder.php
++++ b/plugins/libkolab/lib/kolab_storage_dav_folder.php
+@@ -152,11 +152,13 @@ class kolab_storage_dav_folder extends kolab_storage_folder
+         $owner = $this->get_owner();
+         $user = rcube::get_instance()->get_user_name();
+ 
+-        if ($owner != $user) {
+-            return 'other';
++        // Ours if owned by the Roundcube user or by the DAV server's
++        // current user (the logins may differ)
++        if ($owner == $user || ($this->dav && $owner === $this->dav->currentUserId())) {
++            return 'personal';
+         }
+ 
+-        return 'personal';
++        return 'other';
+     }
+ 
+     /**
+-- 
+2.34.1
+

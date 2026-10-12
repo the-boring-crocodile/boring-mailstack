@@ -1,0 +1,64 @@
+# How each character files their mail (see BIBLE.md, "Filing habits").
+#
+# Applied at the demo provider, before the stack's first import, so the
+# demo starts with mail already in personal folders — exactly what the
+# first import and its provenance record must preserve.
+#
+# Rules apply only to mail that would otherwise land in INBOX (Junk and
+# Sent are left alone). First matching rule wins; no match stays in INBOX.
+# Match keys (all given keys must match):
+#   from: [keys]          the sender is one of these
+#   involves: [keys]      sender, to or cc includes one of these
+#   list: key             a post to this mailing list
+#   invite: true          a calendar invitation or cancellation
+#   to_self: true         sent by the mailbox owner to themselves
+#   subject_has: [words]  subject contains one of these (case-insensitive)
+#   ids: [ids]            these exact mails
+# Subfolders use "/" and are created on the provider as needed.
+
+otter:
+  # Meticulous. Every folder has a reason. The reasons are bleak.
+  - folder: "Predictions/Log"
+    to_self: true
+  - folder: "Lists/rfc-pedants"
+    list: rfc-pedants
+  - folder: "Personal/Mags"
+    involves: [mags]
+  - folder: "Management/Calendar (not attended)"
+    from: [management]
+    invite: true
+  - folder: "Management/Announcements (unread on principle)"
+    from: [management]
+  - folder: "Lighthouse/Risk"
+    subject_has: [risk, filter, "write-up"]
+  - folder: "Lighthouse/Incident"
+    subject_has: [incident]
+  - folder: "Lighthouse"
+    subject_has: [lighthouse]
+  - folder: "Security/Pirate"
+    involves: [em]
+  - folder: "Vendors/Unsolicited"
+    from: [synergycloud, linkedout, pondpulse]
+
+tim:
+  # One folder for the customer, one folder nobody would look in twice.
+  - folder: "Clients/Featherstonehaugh Koi 🐟"
+    involves: [mrs_f]
+  - folder: "Clients/Featherstonehaugh Koi 🐟"
+    subject_has: [featherstonehaugh, renewal, "thursday invoices", "koi received"]
+  - folder: "Networking 🤝"
+    involves: [priya, sam, plenty, lucetta, ramen_ichigo]
+  - folder: "Learning & Development 🎓"
+    from: [synergycloud]
+
+brog: []
+  # None. "everything comes in. i think that is more honest"
+
+croc:
+  # Work stays in the Inbox, where he can see it. Family gets a home.
+  - folder: "Family/Gran's 90th 🎂"
+    involves: [charlotte, desmond]
+  - folder: "Family"
+    involves: [mum]
+  - folder: "Receipts/Coffee"
+    from: [beanthere]

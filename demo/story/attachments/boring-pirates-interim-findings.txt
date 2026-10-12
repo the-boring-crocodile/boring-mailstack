@@ -1,0 +1,25 @@
+BORING PIRATES — SECURITY AWARENESS
+Interim findings: Pond Ltd
+Inspector: Mlle Em, Privateer
+
+1. PHISHING
+   Simulations: 3. Clicks: 0. Credentials entered: 0. Replies: 1.
+   The reply was from Plants. It asked the attacker a question. The
+   attacker (I) could not answer it. Classification: failure (formal),
+   triumph (informal).
+
+2. CREDENTIALS
+   One password found on a sticky note attached to the ficus by the
+   window. Wi-Fi password. Removed and returned. Note: this was item 11
+   on the QA risk register before I arrived. Somebody here reads.
+
+3. CONFIGURATION
+   management@ carries a filter created 14 March 2009, named
+   "DO NOT DELETE". Its action is stored in an obsolete format. I could
+   not determine its effect. Your developer has asked you four times.
+   Recommendation: answer him.
+
+4. CREW
+   Distribution list: 3. Building: 4. Corrected.
+
+Status: inspection continues. Morale aboard: polite, caffeinated.

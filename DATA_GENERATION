@@ -1,0 +1,4 @@
+2
+# Raised whenever a release's init changes data/ so that an older release can no
+# longer run on it; deploy then offers no rollback below it.
+# 2: accounts renamed to their real addresses (v2026.10.14).

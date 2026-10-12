@@ -1,0 +1,37 @@
+id,risk,likelihood,impact,mitigation,status
+1,No one knows which platform we are migrating to,certain,high,Ask,open (asked Monday)
+2,The deadline is a Friday that has not been specified,certain,high,Ask which Friday,open
+3,Sales has already sold it,certain,high,None available,realised
+4,A guarantee has been given,certain,high,Find out what was guaranteed,open
+5,Old mail is not copied,likely,high,Copy it,open
+6,Old mail is copied twice,likely,medium,Copy it once,open
+7,Folders are renamed in transit,likely,medium,Map folder names,open
+8,"""Sent"" becomes ""Sent Items"" becomes ""Sent Messages""",likely,low,Accept,open
+9,Calendar invites from Management continue to arrive,certain,low,Accept,realised
+10,Passwords are written on a sticky note,likely,high,Find the sticky note,open
+11,The sticky note is on the ficus,possible,high,Ask Brog,open
+12,Nobody knows which mail filters people have set up over the years,likely,high,Inventory,open (optimistic)
+13,Spam filter learns from the wrong mail,likely,medium,Train carefully,open
+14,This fails on a Thursday at 03:00,certain,high,See prediction #14,open
+15,Nobody is awake at 03:00 except Croc,certain,medium,Coffee,open
+16,The way back is deleted before it is needed,possible,critical,Do not delete it,open
+17,Backups exist but have never been restored,likely,critical,Restore one,open
+18,DNS,certain,high,DNS,open
+19,TLS certificate expires during the migration,possible,high,Check the date,open
+20,The new platform has a different idea of what a folder is,likely,medium,Test,open
+21,Attachments over 10 MB,likely,low,Test,open
+22,A customer sends invoices on Thursdays,certain,high,See item 14,open
+23,The Sync is cancelled,certain,low,None needed,realised
+24,The Sync is renamed,likely,low,None needed,open
+25,Management announces success before the work starts,likely,low,Accept,open
+26,Management never mentions it again,likely,low,Accept gratefully,open
+27,Auto-replies loop between two mailboxes,possible,medium,Rate limit,open
+28,An auto-reply is sent to a mailing list,possible,high,Test,open
+29,Old addresses stop receiving mail,possible,high,Keep aliases,open
+30,Someone moves mail during the copy,likely,medium,Freeze or re-sync,open
+31,The test uses real mail by accident,possible,critical,Synthetic data only,open
+32,Coffee supply interrupted,possible,critical,Second supplier,open
+33,Webinar invitations survive the migration,certain,low,Accept,open
+34,This risk register is not read,certain,medium,Send it anyway,realised
+35,This risk register is read but not acted on,likely,medium,Send it again,open
+36,An unknown risk,certain,unknown,Add it when it has a name,open

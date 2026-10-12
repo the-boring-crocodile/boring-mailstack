@@ -1,0 +1,84 @@
+# Who is who in Operation Lighthouse (see BIBLE.md).
+#
+# mailbox: true  -> a demo account on the demo provider; receives mail into
+#                   its folders and keeps its own mail in its Sent folder.
+# Everyone else is only a sender or recipient address.
+# Lists deliver each post to their `members`.
+
+people:
+  croc:       { name: "Croc",                   address: croc@pond.test,   mailbox: true }
+  otter:      { name: "Otter",                  address: otter@pond.test,  mailbox: true }
+  tim:        { name: "TIM",                    address: tim@pond.test,    mailbox: true }
+  brog:       { name: "brog",                   address: brog@pond.test,   mailbox: true }
+
+  management: { name: "The Management",         address: management@pond.test }
+
+  em:         { name: "Mlle Em",                address: em@boring-pirates.test }
+  mrs_f:      { name: "Mrs H. Featherstonehaugh", address: h.featherstonehaugh@featherstonehaugh-koi.test }
+
+  # Brog's private life
+  ihm:        { name: "Dr Imogen Hartley-Moss", address: ihm@hartley-moss-practice.test }
+  ihm_auto:   { name: "Dr Imogen Hartley-Moss", address: ihm@hartley-moss-practice.test }
+  fog_rt:     { name: "R.T. ☁",                 address: rt@the-fog-inquiry.test }
+  fog_mk:     { name: "M.K. 🌫",                address: mk@cloudmail.test }
+  fog_g:      { name: "G. ☀",                   address: g.sun@pondpulse.test }
+
+  # Otter's private life
+  mags:       { name: "Mags Pell",              address: mags@pell-apiary.test }
+  rfc_mod:    { name: "rfc-pedants moderator",  address: rfc-pedants-owner@lists.deep-tech.test }
+  thornbury:  { name: "J. Thornbury",           address: jthornbury@oldmail.test }
+  ferrante:   { name: "D. Ferrante",            address: dferrante@pedantry.test }
+  ashdown:    { name: "K. Ashdown",             address: k.ashdown@pedantry.test }
+
+  # Croc's private life
+  mum:        { name: "Mum",                    address: mum.crocodile@family.test }
+  charlotte:  { name: "Charlotte",              address: charlotte@family.test }
+  desmond:    { name: "Uncle Des",              address: des.accordion@family.test }
+
+  # TIM's private life
+  priya:      { name: "Priya N.",               address: priya.n@mail.test }
+  sam:        { name: "Sam R.",                 address: sam.r@mail.test }
+  plenty:     { name: "Plenty",                 address: matches@plenty.test }
+  lucetta:    { name: "Lucetta's on the Canal", address: tavoli@lucettas.test }
+  ramen_ichigo: { name: "Ramen Ichigo",         address: hello@ramen-ichigo.test }
+
+  # The Services
+  beanthere:    { name: "BeanThere Coffee Co.", address: hello@beanthere.test }
+  synergycloud: { name: "SynergyCloud Ltd.",    address: webinars@synergycloud.test }
+  pondpulse:    { name: "PondPulse Analytics",  address: growth@pondpulse.test }
+  linkedout:    { name: "LinkedOut",            address: notifications@linkedout.test }
+  spam_tonic:   { name: "Dr. Hargreave",        address: miracle@uptime-tonic.test }
+  spam_prince:  { name: "PRINCE A. WINTERBOTTOM", address: royal.koi@winterbottom-estate.test }
+  spam_parcel:  { name: "Parcel Services International", address: redelivery@parcel-services.test }
+  spam_quill:   { name: "Professor Quill's Institute", address: enrol@quill-institute.test }
+  spam_fern:    { name: "The Atomic Fern Company", address: hello@atomic-fern.test }
+  spam_koi:     { name: "The Koi Mesmerism Society", address: lessons@koi-mesmerism.test }
+  spam_somno:   { name: "SOMNO-GRAM", address: night-desk@somno-gram.test }
+  spam_lozenge: { name: "Featherbright & Sons", address: lozenges@featherbright.test }
+  spam_mallard: { name: "Dr. Mallard's Remedies", address: tonic@mallard-remedies.test }
+
+  # Mlle Em's simulated phishing (look-alike domains)
+  phish_itsupport:  { name: "IT Support",       address: it-support@p0nd.test }
+  phish_hr:         { name: "Human Resources",  address: hr@pond-ltd.test }
+  phish_postmaster: { name: "Postmaster",       address: postmaster@p0nd.test }
+
+lists:
+  fog:
+    name: "The Fog Inquiry"
+    address: truth@lists.the-fog-inquiry.test
+    list_id: "The Fog Inquiry <truth.lists.the-fog-inquiry.test>"
+    tag: null
+    members: [brog]
+    footer: |
+      The Fog Inquiry · Asking the Questions Weather Won't
+      Unsubscribe: truth-leave@lists.the-fog-inquiry.test
+  rfc-pedants:
+    name: "rfc-pedants"
+    address: rfc-pedants@lists.deep-tech.test
+    list_id: "Discussion of correctness <rfc-pedants.lists.deep-tech.test>"
+    tag: "[rfc-pedants]"
+    members: [otter]
+    footer: |
+      _______________________________________________
+      rfc-pedants — Discussion of correctness. Off-topic: nothing.
+      Unsubscribe: rfc-pedants-leave@lists.deep-tech.test

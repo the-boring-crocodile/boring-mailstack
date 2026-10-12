@@ -1,0 +1,181 @@
+From aac0a6dcbc0afc2c87e908bf1014da1370066b69 Mon Sep 17 00:00:00 2001
+From: The Boring Crocodile <crocodile@heilig.org>
+Date: Wed, 7 Oct 2026 17:22:37 +0200
+Subject: [PATCH] Optionally cache DAV folder properties
+ (dav_cache_folder_info)
+
+For folders outside the personal namespace (e.g. calendars shared by other
+users) the rights are requested on every request, one PROPFIND per folder.
+Some servers (e.g. Nextcloud) compute these slowly, and the cost grows with
+the number of shared folders. With the new option the answer is kept in the
+DAV cache for dav_cache_ttl and dropped when the folder is changed through
+the client. Off by default: nothing changes unless enabled.
+
+Prepared by an AI agent (Claude, Anthropic); reviewed by Wald.
+---
+ plugins/libkolab/config.inc.php.dist          |  6 ++
+ plugins/libkolab/lib/kolab_dav_client.php     | 60 +++++++++++++++++++
+ .../libkolab/lib/kolab_storage_dav_folder.php |  8 ++-
+ 3 files changed, 73 insertions(+), 1 deletion(-)
+
+diff --git a/plugins/libkolab/config.inc.php.dist b/plugins/libkolab/config.inc.php.dist
+index 3fa1952e..ec332c14 100644
+--- a/plugins/libkolab/config.inc.php.dist
++++ b/plugins/libkolab/config.inc.php.dist
+@@ -77,6 +77,12 @@ $config['kolab_users_cache'] = null;
+ // possible units: s, m, h, d, w
+ $config['kolab_users_cache_ttl'] = '10d';
+ 
++// Cache DAV folder properties (rights, sharing) for dav_cache_ttl instead of
++// asking the server for them on every request. Helps with servers that compute
++// them slowly (e.g. Nextcloud); rights or sharing changed outside Roundcube then
++// show up after dav_cache_ttl. Default: false
++$config['dav_cache_folder_info'] = false;
++
+ // Enable sharing of DAV folders. Default: null (disabled)
+ // Possible options:
+ // 'acl': Use standard DAV ACL permissions system
+diff --git a/plugins/libkolab/lib/kolab_dav_client.php b/plugins/libkolab/lib/kolab_dav_client.php
+index 1824ecf0..e60b1236 100644
+--- a/plugins/libkolab/lib/kolab_dav_client.php
++++ b/plugins/libkolab/lib/kolab_dav_client.php
+@@ -496,6 +496,50 @@ class kolab_dav_client
+         return false;
+     }
+ 
++    /**
++     * Folder properties, cached per user for dav_cache_ttl.
++     *
++     * For callers that need a folder's rights and sharing information
++     * (acl, current-user-privilege-set, invite), which some servers (e.g.
++     * Nextcloud) compute slowly and which rarely change. Do not use it for
++     * the CTag (sync state); folderInfo() stays uncached for that. The entry
++     * is dropped before and after the folder is changed through this client;
++     * changes made elsewhere show up after dav_cache_ttl.
++     *
++     * @param string $location Object location
++     *
++     * @return false|array Folder metadata or False on error
++     */
++    public function folderInfoCached($location)
++    {
++        $cache = $this->get_cache();
++        $cache_key = 'folderinfo.' . md5($this->url . $location);
++
++        if ($cache && is_array($info = $cache->get($cache_key))) {
++            return $info;
++        }
++
++        $info = $this->folderInfo($location);
++
++        if ($cache && is_array($info)) {
++            $cache->set($cache_key, $info);
++        }
++
++        return $info;
++    }
++
++    /**
++     * Drop the cached folder properties of a location (see folderInfoCached()).
++     *
++     * @param string $location Object location
++     */
++    protected function forgetFolderInfo($location)
++    {
++        if ($cache = $this->get_cache()) {
++            $cache->remove('folderinfo.' . md5($this->url . $location));
++        }
++    }
++
+     /**
+      * Create a DAV folder
+      *
+@@ -551,8 +595,12 @@ class kolab_dav_client
+      */
+     public function folderDelete($location)
+     {
++        $this->forgetFolderInfo($location);
++
+         $response = $this->request($location, 'DELETE');
+ 
++        $this->forgetFolderInfo($location);
++
+         return $response !== false;
+     }
+ 
+@@ -567,6 +615,8 @@ class kolab_dav_client
+      */
+     public function folderUpdate($location, $component, $properties = [])
+     {
++        $this->forgetFolderInfo($location);
++
+         // Note: Changing resourcetype property is forbidden (at least by Cyrus)
+ 
+         [$props, $ns] = $this->folderPropertiesToXml($properties, 'xmlns:d="DAV:"');
+@@ -584,6 +634,8 @@ class kolab_dav_client
+ 
+         $response = $this->request($location, 'PROPPATCH', $body);
+ 
++        $this->forgetFolderInfo($location);
++
+         // TODO: Should we make sure "200 OK" status is set for all requested properties?
+ 
+         return $response !== false;
+@@ -1043,6 +1095,8 @@ class kolab_dav_client
+      */
+     public function setACL($location, $acl)
+     {
++        $this->forgetFolderInfo($location);
++
+         $ns_privileges = [
+             // CalDAV
+             'read-free-busy' => 'c:read-free-busy',
+@@ -1094,6 +1148,8 @@ class kolab_dav_client
+ 
+         $response = $this->request($location, 'ACL', $body);
+ 
++        $this->forgetFolderInfo($location);
++
+         return $response !== false;
+     }
+ 
+@@ -1107,6 +1163,8 @@ class kolab_dav_client
+      */
+     public function shareResource($location, $sharees = [])
+     {
++        $this->forgetFolderInfo($location);
++
+         $props = '';
+ 
+         foreach ($sharees as $href => $sharee) {
+@@ -1135,6 +1193,8 @@ class kolab_dav_client
+ 
+         $response = $this->request($location, 'POST', $body, $headers);
+ 
++        $this->forgetFolderInfo($location);
++
+         return $response !== false;
+     }
+ 
+diff --git a/plugins/libkolab/lib/kolab_storage_dav_folder.php b/plugins/libkolab/lib/kolab_storage_dav_folder.php
+index 21e00cff..fa7e5a3e 100644
+--- a/plugins/libkolab/lib/kolab_storage_dav_folder.php
++++ b/plugins/libkolab/lib/kolab_storage_dav_folder.php
+@@ -199,7 +199,13 @@ class kolab_storage_dav_folder extends kolab_storage_folder
+      */
+     public function get_folder_info()
+     {
+-        if ($info = $this->dav->folderInfo($this->href)) {
++        // Optionally cached (dav_cache_folder_info): rights and sharing rarely
++        // change; a cached CTag does not override the one from the folder listing.
++        $info = rcube::get_instance()->config->get('dav_cache_folder_info')
++            ? $this->dav->folderInfoCached($this->href)
++            : $this->dav->folderInfo($this->href);
++
++        if ($info) {
+             $this->attributes = array_merge($info, $this->attributes);
+         }
+ 
+-- 
+2.34.1
+

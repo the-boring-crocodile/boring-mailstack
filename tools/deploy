@@ -1,0 +1,650 @@
+#!/usr/bin/env python3
+"""Install this release into a boring-mailstack home, or roll back to it.
+
+    <unpacked release>/tools/deploy HOME
+    HOME/release.previous/tools/deploy HOME        # rollback
+
+HOME (e.g. /opt/docker/boring-mailstack) holds
+    compose.yaml        includes release/compose.yaml: in HOME, `docker compose
+                        up -d` and `down` start and stop the stack (written
+                        here once if missing, then the operator's)
+    compose.override.yaml   optional, the operator's; Compose merges it
+    .env                MAILSTACK_RELEASE and MAILSTACK_HOME (written here)
+    accounts.yaml       the operator's mailboxes
+    folders.yaml        the operator's provider folders
+    release/            the installed release (replaced whole by this tool)
+    release.previous/   the one before it (for rollback)
+    etc/                secrets and host settings; never touched here (but
+                        for the one-time move below)
+    data/               all state; never touched here except by the services
+    DEPLOYED            one line per deployment
+
+A home of a release before v2026.10.14-rc.9 kept accounts.yaml and
+folders.yaml in etc/: the switch moves them up and leaves links in etc/ for
+going back to such a release.
+
+Steps, stopping at the first failure:
+  1. verify   this release's files against its MANIFEST.sha256
+  2. build    images tagged with this release's VERSION
+  3. check    etc/, accounts.yaml and folders.yaml complete and private;
+              the home renders with this release (compose.override.yaml
+              included); accounts.yaml and folders.yaml valid (checked in
+              this release's init image, hence after the build)
+  4. switch   stop the stack; release/ -> release.previous/, this -> release/
+  5. start    and wait until init has run and the services are up
+  6. smoke    webmail answers; Roundcube's schema is current and its database
+              www-data's and private; Stalwart speaks IMAPS; Filters and
+              Contacts are enabled and ManageSieve answers; provenance
+              finished its bootstrap; nothing restarting
+  7. record   append to DEPLOYED and print the rollback command
+
+Backups are the host's own business; deploy takes none.
+Nothing is rolled back automatically: on failure the tool says what failed
+and prints the command to go back. Needs Docker with Compose and python3.
+"""
+import os
+import sys
+
+# Isolated (-I: no PYTHONPATH, user site or current directory on the import
+# path) and without bytecode files (-B: the release tree stays exactly as
+# its manifest lists it).
+if not (sys.flags.isolated and sys.flags.dont_write_bytecode):
+    os.execv(sys.executable, [sys.executable, "-I", "-B", os.path.abspath(__file__), *sys.argv[1:]])
+
+import argparse
+import getpass
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import tempfile
+import time
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import junkport                       # noqa: E402  (shared with tools/demo)
+from homefiles import read_env        # noqa: E402  (shared with setup and demo)
+
+SRC = Path(__file__).resolve().parent.parent
+PROJECT = os.environ.get("MAILSTACK_PROJECT", "boring-mailstack")   # settled in main() from HOME/PROJECT
+ETC_FILES = ["bridge.env", "roundcube/config.inc.php", ".env"]
+HOME_FILES = ["accounts.yaml", "folders.yaml"]     # in etc/ before v2026.10.14-rc.9
+SERVICES = ["stalwart", "mail-provenance", "mail-bridge", "mail-getmail", "mail-relay", "roundcube",
+            "resieve-watch"]
+
+
+class Failed(Exception):
+    pass
+
+
+def say(step, text):
+    print(f"[{step}] {text}", flush=True)
+
+
+def run(cmd, capture=False, env=None, check=True, cwd=None):
+    # stdin from /dev/null: `docker compose exec -T` with the terminal as
+    # stdin can leave it in raw mode (line feeds without carriage return:
+    # the "staircase" seen after the first smoke check). Nothing
+    # deploy runs reads from stdin.
+    r = subprocess.run([str(c) for c in cmd], env=env, text=True, cwd=cwd,
+                       capture_output=capture, stdin=subprocess.DEVNULL)
+    if check and r.returncode != 0:
+        detail = (r.stderr or r.stdout or "").strip()[-2000:] if capture else ""
+        raise Failed(f"command failed ({r.returncode}): {' '.join(map(str, cmd[:6]))} ...\n{detail}")
+    return r.stdout if capture else r.returncode
+
+
+class Stack:
+    """The stack as Compose runs it. In_home: as the operator does, plain
+    `docker compose` in HOME (HOME/compose.yaml, .env, compose.override.yaml;
+    no MAILSTACK_* or COMPOSE_* from the caller's environment). Otherwise
+    straight from one release directory: the new release before it is
+    installed (build), and the installed one of a home that has no HOME/.env
+    for it yet (stopping a release before v2026.10.14-rc.9)."""
+
+    def __init__(self, home, release_dir, version, in_home=False):
+        self.home, self.release_dir, self.version, self.in_home = home, release_dir, version, in_home
+        if in_home:
+            self.env = {k: v for k, v in os.environ.items() if not k.startswith(("MAILSTACK_", "COMPOSE_"))}
+        else:
+            self.env = {**os.environ,
+                        "MAILSTACK_RELEASE": version,
+                        "MAILSTACK_HOME": str(home),
+                        # the variables of releases before v2026.10.14-rc.9
+                        "MAILSTACK_ETC": str(home / "etc"),
+                        "MAILSTACK_DATA": str(home / "data")}
+
+    def compose(self, *args, capture=False, check=True):
+        if self.in_home:
+            return run(["docker", "compose", *args], capture=capture, env=self.env, check=check, cwd=self.home)
+        return run(["docker", "compose", "-p", PROJECT,
+                    "--project-directory", self.release_dir, "-f", self.release_dir / "compose.yaml",
+                    "--env-file", self.home / "etc" / ".env", *args],
+                   capture=capture, env=self.env, check=check)
+
+    def states(self):
+        out = self.compose("ps", "-a", "--format", "json", capture=True)
+        rows = {}
+        for line in out.splitlines():
+            if line.strip():
+                r = json.loads(line)
+                rows[r["Service"]] = r
+        return rows
+
+
+def installed_stack(home, version):
+    """The installed release as Compose runs it: from HOME once HOME/.env
+    was written for it."""
+    env = home / ".env"
+    in_home = (home / "compose.yaml").is_file() and env.is_file() \
+        and read_env(env).get("MAILSTACK_RELEASE") == version
+    return Stack(home, home / "release", version, in_home=in_home)
+
+
+def resolve_project(home):
+    """The home owns its Compose project: HOME/PROJECT, written at the first
+    deploy. MAILSTACK_PROJECT only chooses it then; later it must agree."""
+    f = home / "PROJECT"
+    env = os.environ.get("MAILSTACK_PROJECT")
+    if f.is_file():
+        recorded = f.read_text().strip()
+        if env and env != recorded:
+            raise Failed(f"MAILSTACK_PROJECT={env}, but {home} belongs to project {recorded} ({f})")
+        return recorded
+    return env or "boring-mailstack"
+
+
+def refuse_foreign_project(home, project):
+    """Another installation (or a demo) already using this project name would
+    be taken over by `compose up`: refuse instead."""
+    out = run(["docker", "ps", "-a", "--filter", f"label=com.docker.compose.project={project}",
+               "--format", '{{.Label "com.docker.compose.project.working_dir"}}'], capture=True)
+    foreign = sorted({d for d in out.split() if d and not Path(d).resolve().is_relative_to(home)})
+    if foreign:
+        raise Failed(f"Compose project {project} already belongs to another installation ({foreign[0]}); "
+                     f"choose another name: MAILSTACK_PROJECT=<name> {SRC}/tools/deploy ... {home}")
+
+
+def last_good_version(home):
+    """The version of the last successful deploy (DEPLOYED only records those)."""
+    f = home / "DEPLOYED"
+    lines = [l.split() for l in f.read_text().splitlines() if l.strip()] if f.is_file() else []
+    return lines[-1][1] if lines and len(lines[-1]) > 1 else None
+
+
+def verify(step):
+    manifest = SRC / "MANIFEST.sha256"
+    if not (SRC / "VERSION").is_file() or not manifest.is_file():
+        raise Failed("not a release artifact (VERSION/MANIFEST.sha256 missing); build one with tools/make-release")
+    bad, listed = [], {"MANIFEST.sha256"}
+    for line in manifest.read_text().splitlines():
+        digest, name = line.split("  ", 1)
+        listed.add(name)
+        f = SRC / name
+        if f.is_symlink() or not f.is_file() or hashlib.sha256(f.read_bytes()).hexdigest() != digest:
+            bad.append(name)
+    if bad:
+        raise Failed(f"{len(bad)} file(s) differ from the manifest, e.g. {bad[:5]}")
+    # Nothing beyond the manifest: a file slipped into the unpacked release
+    # (a compose override, a Dockerfile include) would otherwise be used.
+    extra = sorted(p.relative_to(SRC).as_posix() for p in SRC.rglob("*")
+                   if p.is_symlink() or not p.is_dir() and p.relative_to(SRC).as_posix() not in listed)
+    if extra:
+        raise Failed(f"{len(extra)} file(s) not in the manifest, e.g. {extra[:5]}; "
+                     "unpack the release into a fresh, empty directory")
+    say(step, f"release {(SRC / 'VERSION').read_text().strip()}: all files match the manifest, nothing else")
+
+
+def home_file(home, name):
+    """accounts.yaml or folders.yaml: in HOME, or still in etc/ (a home of a
+    release before v2026.10.14-rc.9, moved up at the switch)."""
+    top, old = home / name, home / "etc" / name
+    if top.is_file() and old.is_file() and not old.is_symlink():
+        raise Failed(f"two {name}: {top} and {old}; keep the one in {home} and delete the other")
+    return top if top.is_file() else old
+
+
+def render_home(home, version):
+    """`docker compose config` of the home as it will run with this release:
+    the same include as HOME/compose.yaml, but of this (not yet installed)
+    release, plus the operator's compose.override.yaml. A broken override
+    fails here, before anything is stopped."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        (tmp / ".env").write_text(home_env(home, version))
+        (tmp / "compose.yaml").write_text(compose_yaml(PROJECT, SRC, [home / "etc" / ".env", tmp / ".env"]))
+        files = ["-f", tmp / "compose.yaml"]
+        if (home / "compose.override.yaml").is_file():
+            files += ["-f", home / "compose.override.yaml"]
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("MAILSTACK_", "COMPOSE_"))}
+        # The override sees the variables of HOME/.env as this deploy will
+        # write it (on a first install there is none yet).
+        run(["docker", "compose", "--project-directory", home, "--env-file", tmp / ".env", *files, "config", "-q"],
+            capture=True, env=env)
+
+
+def check(step, home, version):
+    init_image = f"boring-mailstack-init:{version}"
+    missing = [f"etc/{f}" for f in ETC_FILES if not (home / "etc" / f).is_file()]
+    missing += [f for f in HOME_FILES if not home_file(home, f).is_file()]
+    if missing == ["folders.yaml"] and (home / "release").is_dir():
+        raise Failed(f"folders.yaml is missing (new in v2026.10.14-rc.6: which provider folder is Sent, "
+                     f"Junk, ...; CHANGELOG.md): cp {SRC / 'folders.example.yaml'} {home / 'folders.yaml'}, "
+                     "adapt it to your providers, deploy again")
+    if missing or not (home / "data").is_dir():
+        raise Failed(f"{home} is not a prepared home: missing {', '.join(missing)} "
+                     f"{'' if (home / 'data').is_dir() else 'data/'}")
+    if (home / "etc" / "compose.override.yaml").is_file():
+        raise Failed(f"{home}/etc/compose.override.yaml: since v2026.10.14-rc.9 Compose's own place is used, "
+                     f"{home}/compose.override.yaml. Move it there; relative paths in it now start at {home} "
+                     "(release files: ./release/...), and it sees the variables of HOME/.env only")
+    top = home / "compose.yaml"
+    if top.is_file():
+        named = re.search(r"^name:\s*[\"']?([^\s\"']+)", top.read_text(), re.M)
+        if not named or named.group(1) != PROJECT:
+            raise Failed(f"{top} must name the project {PROJECT} (name: {PROJECT}), "
+                         f"not {named.group(1) if named else 'none'}")
+    is_private(home / "etc", [home / "etc", *sorted((home / "etc").rglob("*"))]
+               + [home_file(home, f) for f in HOME_FILES])
+    if len(read_env(home / "etc" / ".env").get("STALWART_ADMIN_PASSWORD", "")) < 16:
+        raise Failed(f"STALWART_ADMIN_PASSWORD in {home}/etc/.env is missing or shorter than 16 characters "
+                     "(it becomes the password of Stalwart's admin page); set one, e.g. openssl rand -hex 18")
+    render_home(home, version)
+    say(step, "etc/, accounts.yaml and folders.yaml complete and private; the home renders with this release")
+    run(["docker", "run", "--rm", "--network", "none",
+               "-v", f"{home_file(home, 'accounts.yaml')}:/app/accounts.yaml:ro",
+               "-v", f"{home_file(home, 'folders.yaml')}:/app/folders.yaml:ro",
+               "-v", f"{SRC / 'tools'}:/app/tools:ro", "-w", "/app",
+               "--entrypoint", "python3", init_image, "tools/check-account-syntax.py"], capture=True)
+    say(step, "accounts.yaml and folders.yaml valid")
+
+
+def data_generation(tree):
+    """The release's DATA_GENERATION: raised whenever its init changes data/
+    so that older releases can no longer run on it (2: accounts renamed to
+    their real addresses). A release without the file: 1; a file that does
+    not say a number is refused."""
+    f = tree / "DATA_GENERATION"
+    if not f.is_file():
+        return 1
+    try:
+        return int(f.read_text().split()[0])
+    except (ValueError, IndexError):
+        raise Failed(f"{f} does not hold a data generation number")
+
+
+def rollback_offer(home, version, src_gen):
+    """(command, version) for going back to release.previous/, judged by
+    what is there now; (None, version) when that release cannot run on what
+    this one left in data/; (None, None) when there is nothing to go back to."""
+    previous = home / "release.previous"
+    if not (previous / "VERSION").is_file():
+        return None, None
+    previous_version = (previous / "VERSION").read_text().strip()
+    if previous_version == version:
+        return None, None
+    if data_generation(previous) < src_gen:
+        return None, previous_version
+    if "MAILSTACK_HOME" not in (previous / "compose.yaml").read_text():
+        # Before v2026.10.14-rc.9: its deploy needs the variable to stop this one.
+        return f"sudo env MAILSTACK_HOME={home} {previous}/tools/deploy {home}", previous_version
+    return f"sudo {previous}/tools/deploy {home}", previous_version
+
+
+def is_private(etc, paths):
+    """etc/, accounts.yaml and folders.yaml hold the secrets: none of them may
+    be open to other users or belong to anyone but root or the user deploying."""
+    me = os.getuid()
+    open_, foreign = [], []
+    for p in paths:
+        st = p.stat()          # a symlink counts as what it points to
+        if st.st_mode & 0o007:
+            open_.append(f"{p.relative_to(etc.parent)} ({st.st_mode & 0o777:o})")
+        if st.st_uid not in (0, me):
+            foreign.append(f"{p.relative_to(etc.parent)} (uid {st.st_uid})")
+    if open_ or foreign:
+        user = "root" if me == 0 else getpass.getuser()
+        fix = " ".join(str(x) for x in [etc, *(x for x in paths if x != etc and etc not in x.parents)])
+        raise Failed("etc/, accounts.yaml and folders.yaml must be private. "
+                     + (f"Open to other users: {', '.join(open_[:5])}. " if open_ else "")
+                     + (f"Owned by someone else: {', '.join(foreign[:5])}. " if foreign else "")
+                     + f"Fix: chown -R {user} {fix} && chmod -R o-rwx {fix}")
+
+
+def lay_out_home(step, home, version):
+    """With the stack down: HOME/.env for this release, HOME/compose.yaml if
+    missing, and accounts.yaml/folders.yaml up from etc/ (a home of a release
+    before v2026.10.14-rc.9; links stay in etc/ for going back to one)."""
+    for name in HOME_FILES:
+        top, old = home / name, home / "etc" / name
+        if not top.exists() and old.is_file() and not old.is_symlink():
+            old.rename(top)
+            old.symlink_to(Path("..") / name)
+            say(step, f"moved etc/{name} to {top} (etc/{name} links there, for going back to an older release)")
+    (home / ".env").write_text(home_env(home, version))
+    (home / ".env").chmod(0o644)
+    if not (home / "compose.yaml").exists():
+        (home / "compose.yaml").write_text(COMPOSE_HEADER + compose_yaml(PROJECT, "release", ["etc/.env", ".env"]))
+        (home / "compose.yaml").chmod(0o644)
+        say(step, f"wrote {home / 'compose.yaml'}: in {home}, docker compose up -d / down")
+
+
+COMPOSE_HEADER = """\
+# boring-mailstack. In this directory:
+#   docker compose up -d      start (init applies accounts.yaml and folders.yaml)
+#   docker compose down       stop
+# New releases: <unpacked release>/tools/deploy with this directory.
+# Your own changes go into compose.override.yaml next to this file (Compose
+# merges it; paths in it start here, release files are ./release/...).
+"""
+
+
+def compose_yaml(project, release, env_files):
+    """The home's Compose project: a release's compose.yaml, run from its own
+    directory, with the operator's settings and then the deployed release's
+    (later env files win)."""
+    files = ", ".join(str(f) for f in env_files)
+    return (f"name: {project}\ninclude:\n  - path: {release}/compose.yaml\n"
+            f"    project_directory: {release}\n    env_file: [{files}]\n")
+
+
+def home_env(home, version):
+    """HOME/.env: which release runs, and where (MAILSTACK_* in compose.yaml)."""
+    return ("# Written by tools/deploy at every deploy: which release runs, and where.\n"
+            "# Your settings are in etc/.env.\n"
+            f"MAILSTACK_RELEASE={version}\nMAILSTACK_HOME={home}\n")
+
+
+def normalise_modes(tree):
+    """Services read files of the release directly (Stalwart its bootstrap
+    script, as its own user), so the installed copy must not depend on the
+    umask it was unpacked with. A release holds no secrets."""
+    for p in [tree, *tree.rglob("*")]:
+        if p.is_symlink():
+            continue
+        if p.is_dir() or p.stat().st_mode & 0o100:
+            p.chmod(0o755)
+        else:
+            p.chmod(0o644)
+
+
+def switch(step, home, current_version, version):
+    release, previous = home / "release", home / "release.previous"
+    installed = installed_stack(home, current_version) if current_version else None
+    if SRC == release or (current_version == version and SRC != previous):
+        # Same release again (a configuration change, or a retry after a
+        # failure): nothing to switch, and release.previous/ stays the last
+        # good one. Stop the stack so every service starts afresh with what
+        # init regenerates (several read their configuration only at start).
+        if installed:
+            installed.compose("down", "--remove-orphans")
+        say(step, f"{version} is installed: redeploying it without switching (stack restarted)")
+        return
+    if SRC == previous:                       # rollback: swap the two
+        if installed:
+            installed.compose("down", "--remove-orphans")
+            say(step, f"stopped {current_version}")
+        swap = home / "release.swap"
+        release.rename(swap)
+        previous.rename(release)
+        swap.rename(previous)
+        say(step, "rolled back: release/ <-> release.previous/")
+        return
+    staging = home / "release.new"
+    if staging.exists():
+        shutil.rmtree(staging)
+    shutil.copytree(SRC, staging, symlinks=True)    # before stopping anything
+    normalise_modes(staging)
+    if installed:
+        installed.compose("down", "--remove-orphans")
+        say(step, f"stopped {current_version}")
+    kept = None
+    if release.exists():
+        if current_version and current_version == last_good_version(home):
+            if previous.exists():
+                shutil.rmtree(previous)
+            release.rename(previous)
+            kept = current_version
+        else:
+            # The installed release never passed its smoke test: drop it and
+            # keep release.previous/, the last good one, for rollback.
+            shutil.rmtree(release)
+    staging.rename(release)
+    say(step, f"installed into {release}" + (f"; {kept} kept in release.previous/" if kept else ""))
+
+
+def switch_state(home):
+    names = ["release", "release.previous", "release.new", "release.swap"]
+    return ", ".join(f"{n}/={(home / n / 'VERSION').read_text().strip() if (home / n / 'VERSION').is_file() else 'present'}"
+                     for n in names if (home / n).exists()) or "no release directory"
+
+
+def start(step, stack, timeout=600):
+    stack.compose("up", "-d", "--remove-orphans")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        s = stack.states()
+        init = s.get("init", {})
+        if init.get("State") == "exited" and init.get("ExitCode") not in (0, None):
+            raise Failed(f"init failed (exit {init.get('ExitCode')}); see: cd {stack.home} && docker compose logs init")
+        up = all(s.get(x, {}).get("State") == "running" for x in SERVICES)
+        healthy = "healthy" in s.get("stalwart", {}).get("Status", "")
+        if init.get("State") == "exited" and up and healthy:
+            say(step, "init done; all services running; Stalwart healthy")
+            junk_port(step, stack)
+            return
+        time.sleep(3)
+    raise Failed("stack not up within 10 minutes")
+
+
+def junk_port(step, stack):
+    try:
+        junkport.open_junk_port(stack.compose,
+                                lambda: "healthy" in stack.states().get("stalwart", {}).get("Status", ""),
+                                lambda text: say(step, text))
+    except RuntimeError as exc:
+        raise Failed(str(exc))
+
+
+def smoke(step, home, stack):
+    env = read_env(home / "etc" / ".env")
+    bind = env["ROUNDCUBE_BIND"]
+    host = "127.0.0.1" if bind in ("0.0.0.0", "::") else bind
+    url = f"http://{host}:{env['ROUNDCUBE_PORT']}/"
+    for attempt in range(20):
+        try:
+            with urllib.request.urlopen(url, timeout=5) as r:
+                if r.status == 200:
+                    break
+        except OSError:
+            time.sleep(3)
+    else:
+        raise Failed(f"webmail does not answer at {url}")
+    say(step, f"webmail answers at {url}")
+
+    # Roundcube's entrypoint only prints a failed schema update and runs on
+    # (tests/roundcube_upgrade): compare the database with the shipped schema.
+    php = ("$d=new PDO('sqlite:/var/roundcube/db/sqlite.db');"
+           "$v=$d->query(\"select value from system where name='roundcube-version'\")->fetchColumn();"
+           "$f=glob('/var/www/html/SQL/sqlite/*.sql');rsort($f);"
+           "echo $v,' ',basename($f[0],'.sql');")
+    have, want = stack.compose("exec", "-T", "roundcube", "php", "-r", php, capture=True).split()
+    if have != want:
+        raise Failed(f"Roundcube schema is {have}, this release expects {want}")
+    say(step, f"Roundcube schema {have} (current)")
+
+    seen = stack.compose("exec", "-T", "roundcube", "stat", "-c", "%U:%G %a",
+                         "/var/roundcube/db/sqlite.db", capture=True).strip()
+    owner, mode = seen.split()
+    if owner != "www-data:www-data" or int(mode, 8) & 0o022:
+        raise Failed(f"Roundcube database is {owner} mode {mode}; the release should have "
+                     "made it www-data's and private (roundcube/db-owner.sh)")
+    say(step, f"Roundcube database {owner}, mode {mode}")
+
+    probe = ("import socket,ssl;c=ssl._create_unverified_context();"
+             "s=c.wrap_socket(socket.create_connection(('stalwart',993),10));"
+             "print(s.recv(200).decode().split()[1]);s.close()")
+    out = stack.compose("run", "--rm", "--no-deps", "-T", "--entrypoint", "python3",
+                        "init", "-c", probe, capture=True).strip()
+    if not out.startswith("OK"):
+        raise Failed(f"Stalwart IMAPS greeting unexpected: {out!r}")
+    say(step, "Stalwart answers IMAPS")
+
+    # Filters, Contacts, cloud files and Calendar: Roundcube's effective
+    # configuration (etc/ plus the release defaults, which own the list:
+    # roundcube/mailstack-defaults.inc.php) enables them all, and its
+    # ManageSieve host answers. An independent check of the built image.
+    php = ("$config=[];include '/var/www/html/config/config.inc.php';"
+           "$m=array_diff(['managesieve','carddav','mailstack_cloudfiles','roundav','calendar','mailstack_darkmail'],"
+           "(array)$config['plugins']);"
+           "if($m){echo 'MISSING ',implode(',',$m);exit;}"
+           "$h=$config['managesieve_host'];$u=parse_url($h);"
+           "$s=@fsockopen($u['host']??$h,$u['port']??($config['managesieve_port']??4190),$e,$x,10);"
+           "if(!$s){echo 'NOCONN ',$h,' ',$x;exit;}stream_set_timeout($s,5);"
+           "while(($l=fgets($s))!==false){if(strncmp($l,'OK',2)==0){echo 'OK ',$h;exit;}}"
+           "echo 'NOGREETING ',$h;")
+    out = stack.compose("exec", "-T", "roundcube", "php", "-r", php, capture=True).strip()
+    if not out.startswith("OK"):
+        raise Failed(f"Roundcube Filters/Contacts not ready: {out}")
+    say(step, f"Roundcube has Filters, Contacts, cloud files and Calendar; ManageSieve answers at {out[3:]}")
+
+    # Roundcube's own network: the services behind Stalwart are out of its
+    # reach (a URL typed into Contacts must not get to them).
+    hidden = ["mail-provenance", "mail-bridge", "trusted-mail-bridge", "resieve-watch",
+              "mail-getmail", "mail-relay"]
+    php = ("foreach(array_slice($argv,1) as $h){if(gethostbyname($h)!==$h){echo 'REACHABLE ',$h;exit;}}"
+           "echo 'OK';")
+    out = stack.compose("exec", "-T", "roundcube", "php", "-r", php, "--", *hidden, capture=True).strip()
+    if out != "OK":
+        raise Failed(f"Roundcube can reach an internal service: {out}")
+    say(step, "Roundcube reaches Stalwart only (provenance, bridge, resieve-watch, relay hidden)")
+
+    # The calendar's tables (40-mailstack-plugin-db). As www-data, the
+    # database's owner, so no root-owned journal is left behind.
+    php = ("$config=[];include '/var/www/html/config/config.inc.php';"
+           "$p=preg_replace('#^sqlite:///|\\?.*$#','',$config['db_dsnw']);"
+           "$d=new PDO('sqlite:'.$p);$v=[];"
+           "foreach($d->query(\"SELECT name,value FROM system WHERE name IN "
+           "('libkolab-version','calendar-caldav-version')\") as $r){$v[]=$r[0].'='.$r[1];}"
+           "echo count($v)==2?'OK ':'MISSING ',implode(' ',$v);")
+    out = stack.compose("exec", "-T", "-u", "www-data", "roundcube", "php", "-r", php, capture=True).strip()
+    if not out.startswith("OK"):
+        raise Failed(f"Roundcube calendar tables not ready: {out}")
+    say(step, f"Roundcube calendar tables present ({out[3:]})")
+
+    deadline = time.time() + 120
+    while time.time() < deadline:
+        logs = stack.compose("logs", "--no-color", "mail-provenance", capture=True)
+        if "bootstrap complete" in logs.split("listening on")[-1]:
+            break
+        time.sleep(3)
+    else:
+        raise Failed("provenance did not complete its bootstrap within 2 minutes")
+    say(step, "provenance bootstrap complete")
+
+    time.sleep(10)
+    restarting = [x for x, r in stack.states().items()
+                  if r.get("State") == "restarting" or (x in SERVICES and r.get("State") != "running")]
+    if restarting:
+        raise Failed(f"not steadily running: {restarting}")
+    say(step, "all services steady")
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("home")
+    a = p.parse_args()
+    home = Path(a.home).resolve()
+    global PROJECT
+    try:
+        PROJECT = resolve_project(home)
+    except Failed as exc:
+        sys.exit(f"deploy: {exc}")
+    version = (SRC / "VERSION").read_text().strip() if (SRC / "VERSION").is_file() else "?"
+    current = home / "release" / "VERSION"
+    current_version = current.read_text().strip() if current.is_file() else None
+    who = os.environ.get("SUDO_USER") or getpass.getuser()
+    # Going back is only possible to a release that can read what this one
+    # leaves in data/ (DATA_GENERATION).
+    installed_gen = data_generation(home / "release") if current_version else None
+    src_gen = data_generation(SRC)
+    print(f"deploy {version} into {home}" + (f" (installed: {current_version})" if current_version else " (first install)"))
+
+    step = "1 verify"
+    try:
+        verify(step)
+        refuse_foreign_project(home, PROJECT)
+        if (current_version == version and SRC != home / "release"
+                and (home / "release" / "MANIFEST.sha256").is_file()
+                and (home / "release" / "MANIFEST.sha256").read_bytes() != (SRC / "MANIFEST.sha256").read_bytes()):
+            raise Failed(f"{version} is installed with other files than this {version}; "
+                         "a changed release needs a new version")
+        if installed_gen is not None and installed_gen > src_gen:
+            raise Failed(f"{current_version} has already changed data/ in a way {version} cannot read "
+                         f"(data generation {installed_gen} > {src_gen}; e.g. accounts renamed). "
+                         "Going back means restoring the backup taken before that upgrade.")
+        if installed_gen is not None and installed_gen < 2:
+            # The renaming of accounts to their real addresses (generation
+            # 2) lives only in v2026.10.14-rc.1 to rc.6.
+            raise Failed(f"{current_version} is too old to upgrade to {version} directly: "
+                         "deploy v2026.10.14-rc.6 first, then this release")
+        step = "2 build"
+        stack_new = Stack(home, SRC, version)
+        say(step, f"building images {version}")
+        stack_new.compose("build", "--quiet", capture=True)
+        step = "3 check"
+        check(step, home, version)
+        step = "4 switch"
+        switch(step, home, current_version, version)
+        if not (home / "PROJECT").is_file():
+            (home / "PROJECT").write_text(PROJECT + "\n")
+        lay_out_home(step, home, version)
+        stack = Stack(home, home / "release", version, in_home=True)
+        step = "5 start"
+        start(step, stack)
+        step = "6 smoke"
+        smoke(step, home, stack)
+    except Exception as exc:
+        if not isinstance(exc, Failed):
+            exc = f"{type(exc).__name__}: {exc}"
+        print(f"\nFAILED at step {step}: {exc}", file=sys.stderr)
+        rollback_cmd, previous_version = rollback_offer(home, version, src_gen)
+        if step in ("5 start", "6 smoke") and current_version == version:
+            print("\nThe same release was redeployed and is not healthy; release.previous/ is unchanged."
+                  "\nFix the cause (e.g. accounts.yaml, etc/) and redeploy"
+                  + (f", or go back with: {rollback_cmd}" if rollback_cmd else "."), file=sys.stderr)
+        elif step in ("5 start", "6 smoke") and previous_version and not rollback_cmd:
+            print(f"\nThe new release is installed but not healthy. There is no rollback to {previous_version}"
+                  " (this release changed data/ for good): fix the cause and redeploy, or restore the backup"
+                  " taken before this deploy.", file=sys.stderr)
+        elif step in ("5 start", "6 smoke") and rollback_cmd:
+            print(f"\nThe new release is installed but not healthy. To go back:\n  {rollback_cmd}", file=sys.stderr)
+        elif step in ("5 start", "6 smoke"):
+            print("\nThe new release is installed but not healthy; there is no earlier release to go back"
+                  " to. Fix the cause (e.g. etc/) and redeploy.", file=sys.stderr)
+        elif step in ("1 verify", "2 build", "3 check"):
+            print("\nNothing was changed: the installed release is untouched and still running.", file=sys.stderr)
+        elif step == "4 switch":
+            print(f"\nStopped during the switch; the stack may be down. In {home}: {switch_state(home)}."
+                  f"\nIf release/ holds a complete release, start it with: sudo {home}/release/tools/deploy {home}"
+                  f"\nOtherwise: sudo {home}/release.previous/tools/deploy {home}", file=sys.stderr)
+        sys.exit(1)
+
+    line = f"{datetime.now().astimezone().isoformat(timespec='seconds')}  {version}  by {who}  previous {current_version or '-'}\n"
+    with open(home / "DEPLOYED", "a") as f:
+        f.write(line)
+    print(f"\n[7 record] {line.strip()}")
+    print(f"\nDEPLOYED {version}.")
+    rollback_cmd, previous_version = rollback_offer(home, version, src_gen)
+    if rollback_cmd:
+        print(f"Rollback, if needed ({previous_version}):\n  {rollback_cmd}")
+    elif previous_version:
+        print(f"No rollback to {previous_version}: this release changed data/ in a way {previous_version}"
+              " cannot read. To go back, restore the backup taken before this deploy.")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,14 @@
+#!/bin/bash
+# Run stalwart-cli against this release's Stalwart, authenticated with the
+# provisioner API key that init keeps in data/stalwart-provision/.
+set -euo pipefail
+
+# shellcheck source=layout.sh
+. "$(dirname "${BASH_SOURCE[0]}")/layout.sh"
+
+exec docker run --rm -i \
+    --network "$MAILSTACK_NETWORK" \
+    --env-file "$MAILSTACK_DATA/stalwart-provision/provisioner.env" \
+    -e STALWART_URL='http://stalwart:8080' \
+    "boring-mailstack-init:$MAILSTACK_RELEASE" \
+    stalwart-cli "$@"

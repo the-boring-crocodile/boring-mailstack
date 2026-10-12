@@ -1,0 +1,413 @@
+#!/usr/bin/env python3
+"""boring-mailstack demo: the whole stack with a simulated mail provider.
+
+    tools/demo up        create (first time) and start the demo
+    tools/demo status    show the demo's containers
+    tools/demo logins    print the URL and the four logins
+    tools/demo reset     start the story over: same URL, same logins
+    tools/demo check     verify a running demo: first import, then live checks
+    tools/demo prepare   write a demo home for tools/deploy instead (trial)
+    tools/demo down --yes  stop the demo and delete everything it created
+
+Four characters of Pond Ltd (croc, otter, tim, brog) have mailboxes at a
+simulated provider, filled with three months of their mail. The stack
+imports it on first start, exactly as it would from a real provider.
+Nothing in the demo can reach a real mail server.
+
+Options (up): --dir DIR (default: $XDG_STATE_HOME/boring-mailstack-demo),
+--bind ADDR (default 0.0.0.0: reachable from the LAN; 127.0.0.1 for this
+machine only), --port N (Roundcube; default 18680,
+Stalwart admin on N+1), --tz ZONE (story time zone, default Europe/London).
+Needs: Docker with Compose, python3, openssl.
+"""
+import argparse
+import json
+import os
+import re
+import secrets
+import shutil
+import socket
+import subprocess
+import sys
+import time
+import zoneinfo
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.dont_write_bytecode = True        # a release tree stays as its manifest lists it
+sys.path.insert(0, str(ROOT / "tools"))
+import homefiles                       # noqa: E402  (etc/ files, shared with tools/setup)
+import junkport                        # noqa: E402  (shared with tools/deploy)
+# Override to run a second demo (e.g. the acceptance test) beside another.
+PROJECT = os.environ.get("DEMO_PROJECT", "boring-mailstack-demo")
+# Image tag; override to keep a second demo's images apart (DEMO_RELEASE).
+RELEASE = os.environ.get("DEMO_RELEASE", "demo")
+DOMAIN = "pond.test"
+PROVIDER = "mail.provider.test"
+CHARACTERS = ["croc", "otter", "tim", "brog"]
+
+
+# Appended to the release's RCMCardDAV settings in a demo only.
+CARDDAV_DEMO_PRESET = """
+// DEMO ONLY (tools/demo): every character gets the demo's Pond Cloud
+// (demo/cloud) with their webmail login. Fine for a demo's throwaway
+// accounts; never in production, where presets are global (see above).
+$prefs['PondCloud'] = [
+    'accountname'   => 'Pond Cloud',
+    'discovery_url' => 'http://cloud.pond.test:8080/remote.php/dav/',
+    'username'      => '%l',
+    'password'      => '%p',
+    'fixed'         => ['accountname', 'discovery_url', 'username', 'password'],
+    'refresh_time'  => '00:10:00',
+];
+"""
+
+
+def default_dir():
+    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    return Path(base) / "boring-mailstack-demo"
+
+
+def run(cmd, **kw):
+    return subprocess.run(cmd, check=True, **kw)
+
+
+write = homefiles.write
+
+
+def compose(demo, *args, capture=False):
+    cmd = ["docker", "compose", "-p", PROJECT, "--project-directory", str(ROOT),
+           "-f", str(ROOT / "compose.yaml"), "-f", str(ROOT / "demo" / "compose.demo.yaml"),
+           "--env-file", str(demo / "etc" / ".env"), *args]
+    if capture:
+        return subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
+    return run(cmd)
+
+
+def make_certs(provider_dir, keystore_password):
+    """A throwaway demo CA and the provider's certificate, valid 30 days."""
+    d = provider_dir
+    ssl = ["openssl"]
+    run(ssl + ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "30",
+               "-subj", "/CN=boring-mailstack demo CA (throwaway)",
+               "-addext", "basicConstraints=critical,CA:TRUE",
+               "-addext", "keyUsage=critical,keyCertSign,cRLSign",
+               "-keyout", d / "ca.key", "-out", d / "ca.crt"], capture_output=True)
+    run(ssl + ["req", "-newkey", "rsa:2048", "-nodes", "-subj", f"/CN={PROVIDER}",
+               "-keyout", d / "provider.key", "-out", d / "provider.csr"], capture_output=True)
+    write(d / "provider.ext",
+          "basicConstraints=critical,CA:FALSE\n"
+          "keyUsage=critical,digitalSignature,keyEncipherment\n"
+          "extendedKeyUsage=serverAuth\n"
+          f"subjectAltName=DNS:{PROVIDER}\n")
+    run(ssl + ["x509", "-req", "-days", "30", "-in", d / "provider.csr",
+               "-CA", d / "ca.crt", "-CAkey", d / "ca.key", "-CAcreateserial",
+               "-extfile", d / "provider.ext", "-out", d / "provider.crt"], capture_output=True)
+    run(ssl + ["pkcs12", "-export", "-name", "provider",
+               "-inkey", d / "provider.key", "-in", d / "provider.crt",
+               "-out", d / "provider.p12", "-passout", f"pass:{keystore_password}"],
+        capture_output=True)
+    for name in ("ca.key", "provider.key", "provider.csr", "provider.ext", "ca.srl"):
+        (d / name).unlink(missing_ok=True)   # the CA key is not needed again
+    # Read by non-root container users (GreenMail, getmail via bind mount).
+    (d / "ca.crt").chmod(0o644)
+    (d / "provider.p12").chmod(0o644)
+
+
+def lan_address():
+    """This machine's address on its main network (no packet is sent)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 9))   # TEST-NET-1: only picks the route
+            return s.getsockname()[0]
+    except OSError:
+        return None
+
+
+def reachable_hosts(bind):
+    """Addresses a person can open, most useful first."""
+    if bind in ("0.0.0.0", "::"):
+        lan = lan_address()
+        return [h for h in (lan, "localhost") if h]
+    if bind.startswith("127."):
+        return ["localhost"]
+    return [bind]
+
+
+SIEVE_JUNK_CHARACTER = "brog"
+
+
+def create(demo, bind, port, tz):
+    try:
+        zoneinfo.ZoneInfo(tz)
+    except (ValueError, zoneinfo.ZoneInfoNotFoundError):
+        raise SystemExit(f"demo: --tz {tz!r} is not a time zone (e.g. Europe/London)")
+    old_umask = os.umask(0o077)
+    try:
+        demo.mkdir(parents=True, mode=0o700)
+        for sub in ("etc/roundcube", "data", "provider"):
+            (demo / sub).mkdir(parents=True, mode=0o700, exist_ok=True)
+
+        passwords = {c: secrets.token_hex(6) for c in CHARACTERS}
+        keystore = secrets.token_hex(18)
+        make_certs(demo / "provider", keystore)
+
+        accounts = {"version": 1, "accounts": {}}
+        for c in CHARACTERS:
+            address = f"{c}@{DOMAIN}"
+            direction = {"active": True, "host": PROVIDER, "tls": "implicit",
+                         "username": address, "password": passwords[c]}
+            accounts["accounts"][c] = {
+                "address": address,
+                "inbound": {**direction, "port": 3993},
+                "outbound": {**direction, "port": 3465},
+            }
+            if c == SIEVE_JUNK_CHARACTER:
+                # One character's provider Junk goes through the filter too
+                # (inbound_sieve): spam stays spam unless a rule says otherwise.
+                accounts["accounts"][c]["inbound_sieve"] = {"folders": ["INBOX", "Junk"]}
+                # ... and the filter may pull mail out of Junk (re-sorting).
+                accounts["accounts"][c]["resieve"] = {"never_move_from": ["Sent", "Drafts", "Trash"]}
+        # JSON is valid YAML; no YAML library needed on the host.
+        write(demo / "accounts.yaml", json.dumps(accounts, indent=2) + "\n")
+        write(demo / "seed-accounts.json", json.dumps(
+            {c: {"address": f"{c}@{DOMAIN}", "password": passwords[c]} for c in CHARACTERS}))
+        (demo / "seed-accounts.json").chmod(0o644)
+        # Pond Cloud logins: the characters' own (demo) passwords, as the
+        # RCMCardDAV preset passes on the webmail login (%l / %p).
+        write(demo / "cloud-users.json", json.dumps(passwords), mode=0o644)
+        carddav = (ROOT / "roundcube" / "carddav-config.inc.php").read_text()
+        write(demo / "carddav-config.inc.php", carddav + CARDDAV_DEMO_PRESET, mode=0o644)
+        # GreenMail marks no folders (no RFC 6154): say which are which.
+        write(demo / "folders.yaml", json.dumps({"version": 1, "providers": {
+            "mail.provider.test": {"Sent": "sent", "Drafts": "drafts", "Junk": "junk", "Trash": "trash"}}},
+            indent=2) + "\n")
+        write(demo / "etc" / "bridge.env", homefiles.bridge_env())
+        write(demo / "etc" / "roundcube" / "config.inc.php", homefiles.roundcube_config(
+            "Pond Ltd Webmail", DOMAIN, "Demo Roundcube settings (written by tools/demo).",
+            "// Sort by the mail's own date, oldest first: imported mail all \"arrived\"\n"
+            "// at import time, so arrival order would scramble the story.\n"
+            "$config['message_sort_col'] = 'date';\n"
+            "$config['message_sort_order'] = 'ASC';\n"))
+
+        users = ",".join(f"{c}:{passwords[c]}@{DOMAIN}" for c in CHARACTERS)
+        env, admin = homefiles.stack_env(bind, port, port + 1, [
+            f"DEMO_PROJECT={PROJECT}",
+            f"MAILSTACK_RELEASE={RELEASE}",
+            f"MAILSTACK_HOME={demo}",
+            f"DEMO_DIR={demo}",
+            f"DEMO_TZ={tz}",
+            f"DEMO_PROVIDER_USERS={users}",
+            f"DEMO_KEYSTORE_PASSWORD={keystore}",
+        ])
+        write(demo / "etc" / ".env", env)
+        shutil.copyfile(ROOT / "stalwart" / "bootstrap-entrypoint.sh", demo / "stalwart-bootstrap.sh")
+        (demo / "stalwart-bootstrap.sh").chmod(0o755)
+
+        hosts = reachable_hosts(bind)
+        lines = ["Webmail:        " + "  or  ".join(f"http://{h}:{port}/" for h in hosts),
+                 f"Stalwart admin: http://{hosts[0]}:{port + 1}/  (admin / {admin})", "",
+                 "Logins (address / password):"]
+        lines += [f"  {c + '@' + DOMAIN:16} / {passwords[c]}" for c in CHARACTERS]
+        write(demo / "LOGINS.txt", "\n".join(lines) + "\n")
+    finally:
+        os.umask(old_umask)
+
+
+def env_of(demo):
+    return homefiles.read_env(demo / "etc" / ".env")
+
+
+def wait_ready(demo, timeout=600):
+    """Wait until seeding and init have finished and Roundcube runs."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        rows = compose(demo, "ps", "-a", "--format", "json", capture=True)
+        state = {}
+        for line in rows.splitlines():
+            if line.strip():
+                r = json.loads(line)
+                state[r["Service"]] = (r["State"], r.get("ExitCode", 0))
+        for svc in ("demo-seed", "init", "demo-cloud"):
+            s = state.get(svc)
+            if s and s[0] == "exited" and (s[1] != 0 or svc == "demo-cloud"):
+                raise SystemExit(f"demo: {svc} failed (exit {s[1]}); see: "
+                                 f"tools/demo logs {svc}")
+        done = all(state.get(s, ("", 1)) == ("exited", 0) for s in ("demo-seed", "init"))
+        if done and state.get("roundcube", ("",))[0] == "running":
+            open_junk_port(demo)
+            return
+        time.sleep(3)
+    raise SystemExit("demo: not ready after 10 minutes; see tools/demo status")
+
+
+def open_junk_port(demo):
+    def compose_(*args, capture=False):
+        return compose(demo, *args, capture=capture)
+
+    def healthy():
+        rows = [json.loads(line) for line in compose(demo, "ps", "--format", "json", capture=True).splitlines()
+                if line.strip()]
+        return any(r["Service"] == "stalwart" and "healthy" in r.get("Status", "") for r in rows)
+
+    try:
+        junkport.open_junk_port(compose_, healthy, lambda text: print(f"demo: {text}"))
+    except RuntimeError as exc:
+        raise SystemExit(f"demo: {exc}")
+
+
+def cmd_up(args):
+    demo = Path(args.dir).expanduser().absolute()
+    if ROOT == demo or ROOT in demo.parents:
+        raise SystemExit("demo: the demo directory must be outside the source tree")
+    if not demo.exists():
+        print(f"demo: creating {demo}")
+        create(demo, args.bind, args.port, args.tz)
+    print("demo: building images (first time takes a few minutes)")
+    compose(demo, "build")
+    compose(demo, "up", "-d")
+    print("demo: seeding the provider and starting the stack...")
+    wait_ready(demo)
+    print("\ndemo: ready. Mail is being imported now; Inboxes fill within a minute or two.\n")
+    print((demo / "LOGINS.txt").read_text())
+
+
+def stop_and_wipe(demo):
+    """Stop the demo and empty data/; etc/, certificates and logins stay."""
+    if not (demo / "etc" / ".env").is_file():
+        raise SystemExit(f"demo: no demo at {demo}")
+    # The Compose project comes from the environment (DEMO_PROJECT); make sure
+    # it is this directory's, so a teardown never hits another demo
+    # (incident 2026-10-07: the reading demo was taken down instead).
+    owner = next((l.split("=", 1)[1] for l in (demo / "etc" / ".env").read_text().splitlines()
+                  if l.startswith("DEMO_PROJECT=")), None)
+    if owner != PROJECT:
+        raise SystemExit(f"demo: {demo} belongs to project {owner or '(not recorded)'}, "
+                         f"not {PROJECT}; set DEMO_PROJECT={owner or '<its project>'}"
+                         + ("" if owner else f" and add that line to {demo / 'etc' / '.env'}"))
+    compose(demo, "down", "-v", "--remove-orphans")
+    # State written by containers belongs to their users (on a rootless
+    # daemon: subordinate UIDs), so it is removed from inside a container.
+    run(["docker", "run", "--rm", "-v", f"{demo / 'data'}:/data",
+         "--entrypoint", "sh", f"boring-mailstack-init:{RELEASE}",
+         "-c", "rm -rf /data/* /data/.[!.]* 2>/dev/null; true"])
+
+
+def cmd_down(args):
+    demo = Path(args.dir).expanduser().absolute()
+    if not args.yes:
+        raise SystemExit(f"demo: down stops project {PROJECT} and deletes {demo} with all its "
+                         "mail and logins; add --yes to do that")
+    stop_and_wipe(demo)
+    shutil.rmtree(demo)
+    print(f"demo: removed {demo}")
+
+
+def cmd_reset(args):
+    demo = Path(args.dir).expanduser().absolute()
+    stop_and_wipe(demo)
+    print("demo: wiped; seeding the story again")
+    cmd_up(args)
+
+
+def cmd_prepare(args):
+    """A home in the production layout, served by the demo provider, for
+    tools/deploy: a trial installation on a real host."""
+    demo = Path(args.dir).expanduser().absolute()
+    if demo.exists() and any(demo.iterdir()):
+        raise SystemExit(f"demo: {demo} exists and is not empty")
+    if demo.exists():
+        demo.rmdir()
+    create(demo, args.bind, args.port, args.tz)
+    # Compose's own override place in a home: its paths start at the home and
+    # it sees only HOME/.env (written by deploy), so the demo's values are
+    # written into it.
+    values = env_of(demo)
+    text = (ROOT / "demo" / "compose.demo.yaml").read_text().replace("- ./demo:", "- ./release/demo:")
+    text = re.sub(r"\$\{(DEMO_[A-Z_]+)(?::[-?][^}]*)?\}", lambda m: values[m.group(1)].replace("$", "$$"), text)
+    write(demo / "compose.override.yaml", text)
+    print(f"demo: prepared {demo} (accounts.yaml, folders.yaml, compose.override.yaml, etc/, data/)")
+    print(f"demo: next: MAILSTACK_PROJECT=boring-mailstack-trial {ROOT}/tools/deploy {demo}")
+    print("demo: (a project name of its own, so the trial cannot touch another installation on this host)")
+
+
+def deployed(demo):
+    """Project and image tag: a deployed home, or a tools/demo demo."""
+    version = demo / "release" / "VERSION"
+    if version.is_file():
+        return (demo / "PROJECT").read_text().strip(), version.read_text().strip()
+    return PROJECT, RELEASE
+
+
+def cmd_check(args):
+    demo = Path(args.dir).expanduser().absolute()
+    project, tag = deployed(demo)
+    base = ["docker", "run", "--rm", "--network", f"{project}_mail-internal",
+            "--network", f"{project}_webmail",
+            "-v", f"{ROOT / 'demo'}:/demo:ro", "-v", f"{ROOT / 'tests' / 'demo'}:/t:ro",
+            "-v", f"{demo / 'seed-accounts.json'}:/a.json:ro",
+            "-v", f"{demo / 'data' / 'mail-provenance'}:/prov:ro",
+            "-e", "DEMO_ACCOUNTS=/a.json", "-e", "PROVENANCE_DB=/prov/provenance.sqlite",
+            "--entrypoint", "python3", f"boring-mailstack-init:{tag}"]
+    print("demo: waiting for the first import to complete...")
+    deadline = time.time() + 600
+    while True:
+        r = subprocess.run(base + ["/t/verify_import.py"], capture_output=True, text=True)
+        if r.returncode == 0 or time.time() > deadline:
+            print(r.stdout, end="")
+            if r.returncode:
+                raise SystemExit("demo: first import incomplete after 10 minutes")
+            break
+        time.sleep(10)
+    if subprocess.run(base + ["/t/roundtrip.py"]).returncode:
+        raise SystemExit("demo: live checks failed")
+    print("demo: CHECK PASSED")
+
+
+def cmd_status(args):
+    demo = Path(args.dir).expanduser().absolute()
+    compose(demo, "ps", "-a")
+
+
+def cmd_logins(args):
+    print((Path(args.dir).expanduser().absolute() / "LOGINS.txt").read_text())
+
+
+def cmd_logs(args):
+    demo = Path(args.dir).expanduser().absolute()
+    compose(demo, "logs", "--no-color", *args.services)
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--dir", default=str(default_dir()))
+    sub = p.add_subparsers(dest="cmd", required=True)
+    up = sub.add_parser("up")
+    # All interfaces: most people run the demo on a home server or in Docker
+    # Desktop and open it from another machine. Nothing in it is real.
+    up.add_argument("--bind", default="0.0.0.0")
+    up.add_argument("--port", type=int, default=18680)
+    up.add_argument("--tz", default="Europe/London")
+    up.set_defaults(fn=cmd_up)
+    down = sub.add_parser("down", help="stop the demo and delete its directory (needs --yes)")
+    down.add_argument("--yes", action="store_true", help="really delete the directory")
+    down.set_defaults(fn=cmd_down)
+    reset = sub.add_parser("reset")
+    reset.set_defaults(fn=cmd_reset)
+    sub.add_parser("status").set_defaults(fn=cmd_status)
+    sub.add_parser("check").set_defaults(fn=cmd_check)
+    prep = sub.add_parser("prepare")
+    prep.add_argument("--bind", default="0.0.0.0")
+    prep.add_argument("--port", type=int, default=18680)
+    prep.add_argument("--tz", default="Europe/London")
+    prep.set_defaults(fn=cmd_prepare)
+    sub.add_parser("logins").set_defaults(fn=cmd_logins)
+    logs = sub.add_parser("logs")
+    logs.add_argument("services", nargs="*")
+    logs.set_defaults(fn=cmd_logs)
+    args = p.parse_args()
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()

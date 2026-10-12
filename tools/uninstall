@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Remove an installed boring-mailstack and check what is left.
+
+    HOME/release/tools/uninstall HOME                       # stop and remove containers only
+    HOME/release/tools/uninstall HOME --delete-home         # ...and delete what deploy made in HOME (all mail!)
+    HOME/release/tools/uninstall HOME --delete-home --images  # ...and its images
+
+Acts only on a home laid out by deploy (HOME/release/VERSION, PROJECT,
+compose.yaml, .env) and stops it as the operator does, `docker compose down`
+in HOME. --images keeps the images of a version another Compose project
+still uses.
+--delete-home deletes only what deploy and setup made there (release*/,
+etc/, data/, DEPLOYED, PROJECT, compose.yaml, compose.override.yaml, .env,
+accounts.yaml, folders.yaml); HOME itself goes only if nothing else is in
+it, and anything else is listed and left in place.
+Ends with a residue report: containers, networks, volumes, images, HOME.
+A Docker command that fails stops the tool with its error: an unknown
+residue is never reported as clean.
+"""
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+PROJECT = None
+# What deploy (and the operator's setup) put into a home; nothing else is ours.
+OURS = ["release", "release.previous", "release.new", "release.swap", "etc", "data", "DEPLOYED", "PROJECT",
+        "compose.yaml", "compose.override.yaml", ".env", "accounts.yaml", "folders.yaml"]
+
+
+def docker(*args):
+    done = subprocess.run(["docker", *args], capture_output=True, text=True)
+    if done.returncode != 0:
+        sys.exit(f"uninstall: docker {' '.join(args[:3])} failed: {done.stderr.strip()[-500:]}")
+    return done.stdout.split()
+
+
+def ours_images(versions):
+    """The stack's images of these versions (every service image is
+    boring-mailstack-<service>:<version>)."""
+    return [i for i in docker("images", "--format", "{{.Repository}}:{{.Tag}}")
+            if i.startswith("boring-mailstack-") and i.rsplit(":", 1)[-1] in versions]
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("home")
+    p.add_argument("--delete-home", action="store_true",
+                   help="delete release*/, etc/, data/ (all mail), accounts.yaml ... ; HOME too if then empty")
+    p.add_argument("--images", action="store_true", help="also remove the images of every deployed version")
+    a = p.parse_args()
+    home = Path(a.home).resolve()
+    global PROJECT
+    release = home / "release"
+    missing = [n for n in ("release/VERSION", "PROJECT", "compose.yaml", ".env") if not (home / n).is_file()]
+    if missing:
+        sys.exit(f"uninstall: {home} is not a home laid out by deploy (missing {', '.join(missing)}); "
+                 "refusing (a home of an older release: deploy this one first, or use that release's uninstall)")
+    PROJECT = (home / "PROJECT").read_text().strip()
+    versions = {line.split()[1] for line in (home / "DEPLOYED").read_text().splitlines()
+                if len(line.split()) > 1} if (home / "DEPLOYED").is_file() else set()
+    versions.add((release / "VERSION").read_text().strip())
+
+    print(f"uninstall: stopping project {PROJECT}")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("MAILSTACK_", "COMPOSE_"))}
+    subprocess.run(["docker", "compose", "down", "-v", "--remove-orphans"], env=env, cwd=home, check=True)
+
+    if a.delete_home:
+        # Files written by containers may belong to their users (on a
+        # rootless daemon: subordinate UIDs): remove those from a container.
+        if (home / "data").is_symlink():
+            sys.exit(f"uninstall: {home / 'data'} is a symlink; delete what it points to yourself "
+                     "(uninstall only deletes inside HOME)")
+        tag = (release / "VERSION").read_text().strip()     # its images exist: it ran
+        done = subprocess.run(["docker", "run", "--rm", "-v", f"{home / 'data'}:/data", "--entrypoint", "sh",
+                               f"boring-mailstack-init:{tag}", "-c", "rm -rf /data/* /data/.[!.]* 2>/dev/null; true"])
+        if done.returncode != 0:
+            sys.exit("uninstall: could not empty data/ from a container; nothing deleted")
+        for name in OURS:
+            p = home / name
+            if p.is_symlink() or p.is_file():
+                p.unlink()
+            elif p.is_dir():
+                shutil.rmtree(p)
+        left = sorted(x.name for x in home.iterdir())
+        if left:
+            print(f"uninstall: deleted boring-mailstack's files in {home}; not ours, left in place: {', '.join(left)}")
+        else:
+            home.rmdir()
+            print(f"uninstall: deleted {home}")
+    if a.images:
+        others = set(docker("ps", "-a", "--format", "{{.Image}}"))      # this project is down by now
+        shared = {v for v in versions if any(i.startswith("boring-mailstack-") and i.endswith(f":{v}") for i in others)}
+        if shared:
+            print(f"uninstall: keeping images of {', '.join(sorted(shared))}: another project uses them")
+        present = ours_images(versions - shared)
+        if present:
+            docker("image", "rm", *present)
+        print(f"uninstall: removed {len(present)} images ({', '.join(sorted(versions - shared))})")
+
+    print("\nResidue check:")
+    leftovers = {
+        "containers": docker("ps", "-a", "-q", "--filter", f"label=com.docker.compose.project={PROJECT}"),
+        "networks": [n for n in docker("network", "ls", "--format", "{{.Name}}") if n.startswith(f"{PROJECT}_")],
+        "volumes": docker("volume", "ls", "-q", "--filter", f"label=com.docker.compose.project={PROJECT}"),
+        "images": ours_images(versions) if a.images else [],
+        "home": ([str(home)] if home.exists() else []) if not a.delete_home
+                else [n for n in OURS if (home / n).exists() or (home / n).is_symlink()],
+    }
+    for kind, items in leftovers.items():
+        print(f"  {kind:10} {len(items)}" + (f"  {items[:5]}" if items else ""))
+    expected = {"home"} if not a.delete_home else set()
+    clean = all(not items for kind, items in leftovers.items() if kind not in expected)
+    print("CLEAN" if clean else "NOT CLEAN")
+    sys.exit(0 if clean else 1)
+
+
+if __name__ == "__main__":
+    main()

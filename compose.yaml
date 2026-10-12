@@ -1,0 +1,237 @@
+# boring-mailstack production stack.
+#
+# Layout (DECISIONS.md, DEPLOY.md), e.g. under /opt/docker/boring-mailstack:
+#   compose.yaml            includes this file; `docker compose up -d` / `down` there
+#   .env                    MAILSTACK_RELEASE and MAILSTACK_HOME, written by tools/deploy
+#   accounts.yaml, folders.yaml   the operator's mailboxes and provider folders
+#   release/  this file and the code of one release (no Git)
+#   etc/      host secrets and settings: bridge.env, roundcube/config.inc.php, .env
+#   data/     all state, including what init generates
+#
+# Every variable is required: a missing value fails instead of falling back
+# to a default.
+#
+# Container names come from the Compose project name (boring-mailstack-<service>-1),
+# so a demo project (tools/demo) can run beside production on one daemon.
+name: boring-mailstack
+
+services:
+  prepare:
+    build:
+      context: ./prepare
+    image: boring-mailstack-prepare:${MAILSTACK_RELEASE:?Set by tools/deploy}
+    restart: "no"
+    # Only creates directories. Without this Compose would create a
+    # <project>_default network just for it; Docker's address pools are
+    # finite (the defaults ran out at 34 networks on one host).
+    network_mode: none
+    volumes:
+      - ${MAILSTACK_HOME:?Set by tools/deploy}/data:/data
+
+  stalwart:
+    # 0.16.23, pinned by digest.
+    image: stalwartlabs/stalwart@sha256:be215678796691bc39bdda918ecc50d14a9032a099a1d1950e51950aec7e2592
+    hostname: stalwart.mailstack.local
+    environment:
+      STALWART_RECOVERY_ADMIN: "${STALWART_RECOVERY_ADMIN:?Set in etc/.env}"
+    restart: unless-stopped
+    depends_on:
+      prepare:
+        condition: service_completed_successfully
+    ports:
+      # Admin UI and API, for the operator only; nothing in the stack uses
+      # the host port. A LAN address, never all interfaces.
+      - "${STALWART_ADMIN_BIND:?Set in etc/.env}:${STALWART_ADMIN_PORT:?Set in etc/.env}:8080"
+    volumes:
+      - ${MAILSTACK_HOME:?}/data/stalwart-etc:/etc/stalwart
+      - ${MAILSTACK_HOME:?}/data/stalwart-data:/var/lib/stalwart
+      - ./stalwart/bootstrap-entrypoint.sh:/usr/local/bin/mailstack-stalwart-bootstrap:ro
+    entrypoint: ["/usr/local/bin/mailstack-stalwart-bootstrap"]
+    networks:
+      mail-internal:
+        aliases:
+          # Docker DNS does not resolve `hostname`; Roundcube, resieve and the
+          # bridge's advertised origin use this name.
+          - stalwart.mailstack.local
+      relay-internal:
+        aliases:
+          - stalwart-relay-client
+      webmail:
+        aliases:
+          - stalwart.mailstack.local
+
+  init:
+    build:
+      context: ./init
+    image: boring-mailstack-init:${MAILSTACK_RELEASE:?}
+    restart: "no"
+    depends_on:
+      stalwart:
+        condition: service_healthy
+    volumes:
+      - ${MAILSTACK_HOME:?}/accounts.yaml:/app/accounts.yaml:ro
+      - ${MAILSTACK_HOME:?}/folders.yaml:/app/folders.yaml:ro
+      - ${MAILSTACK_HOME:?}/etc/bridge.env:/app/bridge/bridge.env:ro
+      - ./tools:/app/tools:ro
+      - ${MAILSTACK_HOME:?}/data/generated:/app/generated
+      # init's own state: the provisioner API key (and, only during an
+      # interrupted first boot, bootstrap-admin.env).
+      - ${MAILSTACK_HOME:?}/data/stalwart-provision:/app/stalwart
+    working_dir: /app
+    env_file: [stack.env]
+    environment:
+      STALWART_URL: "http://stalwart:8080"
+      STALWART_USER: "admin"
+      STALWART_PASSWORD: "${STALWART_ADMIN_PASSWORD:?Set in etc/.env}"
+      # Set as the password of Stalwart's `admin` (the admin page) at every
+      # start; STALWART_PASSWORD above only serves the bootstrap.
+      MAILSTACK_ADMIN_PASSWORD: "${STALWART_ADMIN_PASSWORD:?}"
+    command: ["/usr/local/bin/mailstack-init"]
+    networks:
+      - mail-internal
+
+  mail-provenance:
+    build:
+      context: ./mail-provenance
+    image: boring-mailstack-mail-provenance:${MAILSTACK_RELEASE:?}
+    restart: unless-stopped
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    volumes:
+      - ${MAILSTACK_HOME:?}/data/mail-provenance:/data
+      - ${MAILSTACK_HOME:?}/data/generated/stalwart-accounts.json:/config/stalwart-accounts.json:ro
+    environment:
+      # Re-sort chute: a human move into INBOX/Junk goes back to the filter.
+      RESIEVE_WATCH_URL: "http://resieve-watch:8080/resort"
+    networks:
+      - mail-internal
+
+  mail-bridge:
+    build:
+      context: ./bridge
+    image: boring-mailstack-bridge:${MAILSTACK_RELEASE:?}
+    restart: unless-stopped
+    # In-flight deliveries finish (they may wait ~2.5 min for provenance).
+    stop_grace_period: 3m
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      mail-provenance:
+        condition: service_started
+    env_file:
+      - stack.env
+      # Only JMAP_PASSWORD there; the rest of the bridge's login is fixed:
+      - ${MAILSTACK_HOME:?}/etc/bridge.env
+    environment:
+      PROVENANCE_URL: "http://mail-provenance:8080"
+      JMAP_SESSION: "https://stalwart.mailstack.local/jmap/session"
+      JMAP_USER: "mail-bridge@mailstack.local"
+    volumes:
+      - ${MAILSTACK_HOME:?}/data/generated/bridge-routes.json:/config/bridge-routes.json:ro
+    networks:
+      mail-internal:
+        aliases:
+          # Required by Stalwart's spam trust rule.
+          - trusted-mail-bridge
+
+  mail-getmail:
+    build:
+      context: ./getmail
+    image: boring-mailstack-getmail:${MAILSTACK_RELEASE:?}
+    restart: unless-stopped
+    # A stop waits for the mail being handed over (getmail/entrypoint.sh).
+    stop_grace_period: 3m
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      mail-bridge:
+        condition: service_started
+    env_file: [stack.env]
+    environment:
+      SCAN_INTERVAL: "300"
+    volumes:
+      - ${MAILSTACK_HOME:?}/data/generated/getmail:/config:ro
+      - ${MAILSTACK_HOME:?}/data/getmail-state:/state
+    networks:
+      - mail-internal
+
+  mail-relay:
+    build:
+      context: ./relay
+    image: boring-mailstack-relay:${MAILSTACK_RELEASE:?}
+    restart: unless-stopped
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    volumes:
+      - ${MAILSTACK_HOME:?}/data/generated/postfix:/config:ro
+      - ${MAILSTACK_HOME:?}/data/relay-spool:/var/spool/postfix
+    networks:
+      mail-internal:
+      relay-internal:
+        aliases:
+          - relay-private
+
+  roundcube:
+    build:
+      context: ./roundcube
+    image: boring-mailstack-roundcube:${MAILSTACK_RELEASE:?}
+    restart: unless-stopped
+    depends_on:
+      stalwart:
+        condition: service_healthy
+    ports:
+      # Behind a reverse proxy on the host: bind to 127.0.0.1 (etc/.env).
+      - "${ROUNDCUBE_BIND:?Set in etc/.env}:${ROUNDCUBE_PORT:?Set in etc/.env}:80"
+    volumes:
+      - ${MAILSTACK_HOME:?}/data/roundcube-db:/var/roundcube/db
+      # Private on the host; a pre-setup task copies it for Apache
+      # (roundcube/etc-config.sh).
+      - ${MAILSTACK_HOME:?}/etc/roundcube/config.inc.php:/run/mailstack-etc/config.inc.php:ro
+    environment:
+      ROUNDCUBEMAIL_DB_TYPE: sqlite
+      # The image's default DSN creates the database with mode 0646.
+      ROUNDCUBEMAIL_DSNW: "sqlite:////var/roundcube/db/sqlite.db?mode=0600"
+      ROUNDCUBEMAIL_SKIN: elastic
+      # Optional extras only: the product's plugins (Filters, Contacts,
+      # cloud files, Calendar, dark mail) are added by the image's release
+      # defaults (roundcube/mailstack-defaults.inc.php), whatever etc/ sets.
+      ROUNDCUBEMAIL_PLUGINS: "archive,zipdownload"
+    networks:
+      # Stalwart only (and the outside world, for CardDAV/CalDAV/Nextcloud):
+      # an address a user types into Contacts or cloud files cannot reach
+      # provenance, the bridge or resieve-watch (DECISIONS.md, "Roundcube on
+      # its own network").
+      - webmail
+
+  # Runs resieve --apply for an account after its active Sieve filter
+  # changed (Stalwart webhook on ManageSieve changes, hourly check as a
+  # fallback). DECISIONS.md, "Automatic resieve after a filter change".
+  resieve-watch:
+    build:
+      context: ./resieve
+      target: watch
+    image: boring-mailstack-resieve-watch:${MAILSTACK_RELEASE:?}
+    restart: unless-stopped
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    volumes:
+      - ${MAILSTACK_HOME:?}/data/mail-provenance:/provenance
+      - ${MAILSTACK_HOME:?}/data/resieve-watch:/state
+      - ${MAILSTACK_HOME:?}/data/generated/stalwart-accounts.json:/config/stalwart-accounts.json:ro
+    environment:
+      RESIEVE_PROVENANCE_DB: "/provenance/provenance.sqlite"
+      RESIEVE_URL: "https://stalwart.mailstack.local/jmap/session"
+    networks:
+      - mail-internal
+
+networks:
+  # Not internal: getmail and the relay reach the providers through it.
+  mail-internal:
+  relay-internal:
+    internal: true
+  # Roundcube and Stalwart. Not internal: Roundcube reaches the users'
+  # CardDAV/CalDAV/Nextcloud servers through it.
+  webmail:

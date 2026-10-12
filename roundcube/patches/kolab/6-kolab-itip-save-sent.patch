@@ -1,0 +1,116 @@
+From a6e841b4ec77682780ede665a7fd3e3eb6926ba1 Mon Sep 17 00:00:00 2001
+From: The Boring Crocodile <crocodile@heilig.org>
+Date: Wed, 7 Oct 2026 17:27:10 +0200
+Subject: [PATCH] Optionally save sent iTip messages in the Sent folder (T1337)
+
+A new user preference (Preferences > Calendar > Event Invitations,
+calendar_itip_save_sent, default off) keeps a copy of sent invitations,
+updates and replies in the Sent folder, using rcmail_sendmail::save_message()
+(sent_mbox and no_save_sent_messages apply). It also applies to the tasklist
+plugin, which shares libcalendaring_itip. Not for messages sent from an
+unauthenticated session. Each recipient's message is saved, as each is sent
+separately.
+
+Prepared by an AI agent (Claude, Anthropic); reviewed by Wald.
+---
+ plugins/calendar/calendar.php                 | 19 +++++++++++++++++++
+ plugins/calendar/config.inc.php.dist          |  5 +++++
+ plugins/calendar/localization/en_US.inc       |  1 +
+ .../lib/libcalendaring_itip.php               |  9 +++++++++
+ 4 files changed, 34 insertions(+)
+
+diff --git a/plugins/calendar/calendar.php b/plugins/calendar/calendar.php
+index 19c91f6e..770bcebd 100644
+--- a/plugins/calendar/calendar.php
++++ b/plugins/calendar/calendar.php
+@@ -72,6 +72,7 @@ class calendar extends rcube_plugin
+         'calendar_allow_invite_shared' => false,
+         'calendar_itip_send_option'    => 3,
+         'calendar_itip_after_action'   => 0,
++        'calendar_itip_save_sent'      => false,
+     ];
+ 
+     private $token;
+@@ -708,6 +709,23 @@ class calendar extends rcube_plugin
+             ];
+         }
+ 
++        // Copies of sent invitations and replies (also for tasks)
++        if (!isset($no_override['calendar_itip_save_sent'])) {
++            if (empty($p['current'])) {
++                $p['blocks']['itip']['content'] = true;
++                return $p;
++            }
++
++            $field_id = 'rcmfd_itip_save_sent';
++            $input    = new html_checkbox(['name' => '_itip_save_sent', 'id' => $field_id, 'value' => 1]);
++            $val      = $this->rc->config->get('calendar_itip_save_sent', $this->defaults['calendar_itip_save_sent']);
++
++            $p['blocks']['itip']['options']['itip_save_sent'] = [
++                'title'   => html::label($field_id, rcube::Q($this->gettext('itipsavesent'))),
++                'content' => $input->show($val ? 1 : 0),
++            ];
++        }
++
+         // category definitions
+         if (empty($this->driver->nocategories) && !isset($no_override['calendar_categories'])) {
+             $p['blocks']['categories']['name'] = $this->gettext('categories');
+@@ -936,6 +954,7 @@ $("#rcmfd_new_category").keypress(function(event) {
+                 'calendar_birthdays_alarm_type'   => rcube_utils::get_input_value('_birthdays_alarm_type', rcube_utils::INPUT_POST),
+                 'calendar_birthdays_alarm_offset' => $birthdays_alarm_value ?: null,
+                 'calendar_itip_after_action'      => intval(rcube_utils::get_input_value('_after_action', rcube_utils::INPUT_POST)),
++                'calendar_itip_save_sent'         => (bool) rcube_utils::get_input_value('_itip_save_sent', rcube_utils::INPUT_POST),
+             ];
+ 
+             if ($p['prefs']['calendar_itip_after_action'] == 4) {
+diff --git a/plugins/calendar/config.inc.php.dist b/plugins/calendar/config.inc.php.dist
+index 586683f7..4745504a 100644
+--- a/plugins/calendar/config.inc.php.dist
++++ b/plugins/calendar/config.inc.php.dist
+@@ -111,6 +111,11 @@ $config['calendar_itip_send_option'] = 3;
+ // folder_name - move the message to the specified folder
+ $config['calendar_itip_after_action'] = 0;
+ 
++// Save a copy of sent iTip messages (invitations, updates, replies; also those
++// of the tasklist plugin) in the user's Sent folder. Default for the user
++// preference in Preferences > Calendar > Event Invitations.
++$config['calendar_itip_save_sent'] = false;
++
+ // enable asynchronous free-busy triggering after data changed
+ $config['calendar_freebusy_trigger'] = false;
+ 
+diff --git a/plugins/calendar/localization/en_US.inc b/plugins/calendar/localization/en_US.inc
+index 1a16b1e8..7ae56219 100644
+--- a/plugins/calendar/localization/en_US.inc
++++ b/plugins/calendar/localization/en_US.inc
+@@ -32,6 +32,7 @@ $labels['afterflagdeleted'] = 'Flag as deleted';
+ $labels['aftermoveto'] = 'Move to...';
+ $labels['itipoptions'] = 'Event Invitations';
+ $labels['afteraction'] = 'After an invitation or update message is processed';
++$labels['itipsavesent'] = 'Save sent invitations and replies in the Sent folder';
+ $labels['showweekno'] = 'Display week numbers';
+ $labels['weeknonone'] = 'never';
+ $labels['weeknodatepicker'] = 'in datepicker only';
+diff --git a/plugins/libcalendaring/lib/libcalendaring_itip.php b/plugins/libcalendaring/lib/libcalendaring_itip.php
+index 94e8b056..c96445f3 100644
+--- a/plugins/libcalendaring/lib/libcalendaring_itip.php
++++ b/plugins/libcalendaring/lib/libcalendaring_itip.php
+@@ -180,6 +180,15 @@ class libcalendaring_itip
+         $sent = $this->rc->deliver_message($message, $headers['X-Sender'], $mailto, $smtp_error);
+         $this->itip_send = false;
+ 
++        // Keep a copy in the user's Sent folder if wanted (calendar_itip_save_sent);
++        // not for messages sent from an unauthenticated session
++        if ($sent && $this->rc instanceof rcmail && !empty($this->rc->user->ID)
++            && $this->rc->config->get('calendar_itip_save_sent')
++        ) {
++            $sendmail = new rcmail_sendmail();
++            $sendmail->save_message($message);
++        }
++
+         return $sent;
+     }
+ 
+-- 
+2.34.1
+

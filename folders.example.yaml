@@ -1,0 +1,48 @@
+# folders.yaml: what your providers' folders are, where a provider does
+# not say it itself. Most providers mark their special folders (RFC 6154:
+# Sent, Drafts, Junk, Trash, Archive, Gmail's All Mail ...) and need nothing
+# here. Where they are not marked, Sent is just a folder called
+# INBOX.Sent, spam is not recognised as spam, and so on, until you list them.
+#
+# Roles (every one there is):
+#   sent       sent mail: the provider's copy of what you sent here is not
+#              shown a second time
+#   drafts     drafts
+#   junk       spam: arrives in Junk, marked as spam; moving it there or out
+#              of it at the provider does the same here
+#   trash      deleted mail: arrives in Trash; likewise a place, not a label
+#   archive    the archive
+#   all        all mail in one view (Gmail's "All Mail"): not fetched, and
+#              tells the stack that the provider's folders are labels
+#   important  a view (Gmail's "Important"): not fetched
+#   flagged    a view of starred mail (Gmail's "Starred"): not fetched
+#   skip       not fetched at all
+#   none       an ordinary folder, whatever the provider marks it as
+# INBOX is always the inbox and cannot be given a role.
+#
+# For each folder the first matching entry counts: the account's entries,
+# then those of the first provider whose pattern matches the account's
+# inbound host; otherwise what the provider says. Folder names and hosts may
+# use * and ? as wildcards. Which folders a provider has, and how it marks
+# them: the folder scan logs them (FOLDERS ... roles: ...) after a deploy.
+# After a change: docker compose down, then up -d, in the installation
+# directory (DEPLOY.md).
+version: 1
+
+providers:
+  # A mapping for Hetzner mailboxes (www<NNN>.your-server.de).
+  "*.your-server.de":
+    INBOX.Sent: sent
+    INBOX.Drafts: drafts
+    INBOX.Trash: trash
+    INBOX.spambucket: junk
+
+  # GMX marks its folders itself; its outbox only holds mail scheduled for
+  # sending later.
+  imap.gmx.net:
+    OUTBOX: skip
+
+accounts: {}
+  # alice:                      # an account id from accounts.yaml
+  #   INBOX.Old Stuff: skip
+  #   INBOX.Archiv: archive

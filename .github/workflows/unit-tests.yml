@@ -1,0 +1,27 @@
+# The fast tier on every push and pull request: tests/unit/run.sh (Python
+# unittest and pyflakes, the cloud-files plugin in the pinned Roundcube
+# image, resieve's cargo test in the pinned Rust image). The slower suites
+# (acceptance demo, deploy, first install, trial) need minutes to tens of
+# minutes and are run by hand before every release (DEVELOPMENT.md).
+name: unit tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # actions/checkout v7.0.1, pinned by commit like every image here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Python dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y -q python3-yaml python3-pyflakes
+      - name: tests/unit/run.sh
+        run: tests/unit/run.sh

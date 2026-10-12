@@ -1,0 +1,57 @@
+// Dynamic diagram (C4): the way of a mail through boring-mailstack.
+// Render: dot -Tsvg way-of-a-mail.dot | python3 badges.py > way-of-a-mail.svg
+// (badges.py puts every step number in a circle on the middle of its arrow)
+// Style and rules as the other diagrams: README.md in this folder.
+digraph "The way of a mail" {
+graph [rankdir=TB, newrank=true, splines=line, nodesep=0.9, ranksep=0.9, bgcolor="#ffffff", pad=0.444, fontname="Helvetica", fontsize=10, labelloc=t, labeljust=l,
+label=<<TABLE BORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="18"><B>The way of a mail</B></FONT></TD></TR><TR><TD HEIGHT="6"></TD></TR><TR><TD ALIGN="LEFT">Dynamic diagram · boring-mailstack · in (1-5) and out (6-9)</TD></TR><TR><TD HEIGHT="10"></TD></TR></TABLE>>];
+node [shape=box,style=filled,width=3.6,height=1.15,fontname="Helvetica",fontsize=10,margin="0.167,0.111",fontcolor="#111111",penwidth=1.2];
+edge [arrowsize=0.7,penwidth=1.4,color="#587b96",fontname="Helvetica",fontsize=11,fontcolor="#33506a"];
+
+provider [fillcolor="#f5f5f3",color="#8c8d87",label=<<TABLE BORDER="0" CELLSPACING="4" CELLPADDING="0"><TR><TD WIDTH="220" ALIGN="LEFT"><FONT POINT-SIZE="12"><B>Your mail provider</B></FONT></TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">[External service · IMAPS, SMTPS]</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">Receives your mail, keeps all of it,</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">sends it out under your address</TD></TR></TABLE>>];
+you [style="filled,rounded",fillcolor="#edf2fa",color="#7489a5",margin="0",label=<<TABLE BORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD COLSPAN="3" HEIGHT="8"></TD></TR><TR><TD WIDTH="15"></TD><TD><TABLE BORDER="0" CELLSPACING="4" CELLPADDING="0"><TR><TD WIDTH="220" ALIGN="LEFT"><FONT POINT-SIZE="12"><B>You</B></FONT></TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">[Person]</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">Read, file and write mail</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">in the browser</TD></TR></TABLE></TD><TD WIDTH="16"></TD></TR><TR><TD COLSPAN="3" HEIGHT="8"></TD></TR><TR><TD COLSPAN="3"><TABLE BORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD WIDTH="72" HEIGHT="1"></TD><TD PORT="l" WIDTH="1" HEIGHT="1"></TD><TD WIDTH="113" HEIGHT="1"></TD><TD PORT="r" WIDTH="1" HEIGHT="1"></TD><TD WIDTH="72" HEIGHT="1"></TD></TR></TABLE></TD></TR></TABLE>>];
+
+subgraph cluster_stack {
+label="boring-mailstack · one host, Docker Compose"; labelloc=b; labeljust=l; color="#929a96"; margin=24; fontname="Helvetica"; fontsize=10;
+getmail [fillcolor="#edf5ef",color="#7a9783",label=<<TABLE BORDER="0" CELLSPACING="4" CELLPADDING="0"><TR><TD WIDTH="220" ALIGN="LEFT"><FONT POINT-SIZE="12"><B>getmail</B></FONT></TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">[Container · getmail6]</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">Fetches new mail, folder by folder;</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">deletes nothing at the provider</TD></TR></TABLE>>];
+relay [fillcolor="#edf5ef",color="#7a9783",label=<<TABLE BORDER="0" CELLSPACING="4" CELLPADDING="0"><TR><TD WIDTH="220" ALIGN="LEFT"><FONT POINT-SIZE="12"><B>relay</B></FONT></TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">[Container · Postfix]</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">Sends each mail through</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">its sender's own provider</TD></TR></TABLE>>];
+webmail [fillcolor="#edf2fa",color="#7489a5",margin="0",label=<<TABLE BORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD COLSPAN="4"><TABLE BORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD WIDTH="72" HEIGHT="1"></TD><TD PORT="l" WIDTH="1" HEIGHT="1"></TD><TD WIDTH="113" HEIGHT="1"></TD><TD PORT="r" WIDTH="1" HEIGHT="1"></TD><TD WIDTH="72" HEIGHT="1"></TD></TR></TABLE></TD></TR><TR><TD COLSPAN="4" HEIGHT="7"></TD></TR><TR><TD WIDTH="1" HEIGHT="23"></TD><TD ROWSPAN="5" WIDTH="14"></TD><TD ROWSPAN="5"><TABLE BORDER="0" CELLSPACING="4" CELLPADDING="0"><TR><TD WIDTH="220" ALIGN="LEFT"><FONT POINT-SIZE="12"><B>Roundcube</B></FONT></TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">[Container · webmail]</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">Mail, filters, and your Nextcloud's</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">contacts, calendar and files</TD></TR></TABLE></TD><TD ROWSPAN="5" WIDTH="16"></TD></TR><TR><TD PORT="t" WIDTH="1" HEIGHT="1"></TD></TR><TR><TD WIDTH="1" HEIGHT="20"></TD></TR><TR><TD PORT="b" WIDTH="1" HEIGHT="1"></TD></TR><TR><TD WIDTH="1" HEIGHT="21"></TD></TR><TR><TD COLSPAN="4" HEIGHT="9"></TD></TR></TABLE>>];
+bridge [fillcolor="#edf5ef",color="#7a9783",label=<<TABLE BORDER="0" CELLSPACING="4" CELLPADDING="0"><TR><TD WIDTH="220" ALIGN="LEFT"><FONT POINT-SIZE="12"><B>bridge</B></FONT></TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">[Container · Python]</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">Decides per provider folder</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">how a mail comes in</TD></TR></TABLE>>];
+stalwart [fillcolor="#edf5ef",color="#7a9783",margin="0",label=<<TABLE BORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD COLSPAN="4" HEIGHT="8"></TD></TR><TR><TD ROWSPAN="5" WIDTH="15"></TD><TD ROWSPAN="5"><TABLE BORDER="0" CELLSPACING="4" CELLPADDING="0"><TR><TD WIDTH="220" ALIGN="LEFT"><FONT POINT-SIZE="12"><B>Stalwart</B></FONT></TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">[Container · mail server]</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">Your local mailbox, with your</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">Sieve filter; IMAP for other clients</TD></TR></TABLE></TD><TD ROWSPAN="5" WIDTH="15"></TD><TD WIDTH="1" HEIGHT="23"></TD></TR><TR><TD PORT="t" WIDTH="1" HEIGHT="1"></TD></TR><TR><TD WIDTH="1" HEIGHT="20"></TD></TR><TR><TD PORT="b" WIDTH="1" HEIGHT="1"></TD></TR><TR><TD WIDTH="1" HEIGHT="21"></TD></TR><TR><TD COLSPAN="4" HEIGHT="9"></TD></TR></TABLE>>];
+provenance [fillcolor="#edf5ef",color="#7a9783",label=<<TABLE BORDER="0" CELLSPACING="4" CELLPADDING="0"><TR><TD WIDTH="220" ALIGN="LEFT"><FONT POINT-SIZE="12"><B>provenance</B></FONT></TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">[Container · Python / SQLite]</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">Remembers every mail a human</TD></TR><TR><TD WIDTH="220" ALIGN="LEFT">placed, so filters leave it alone</TD></TR></TABLE>>];
+{rank=same; getmail; relay;}
+getmail -> relay [style=invis,weight=100];
+stalwart -> webmail [style=invis];
+{rank=same; bridge; stalwart; webmail;}
+// provenance sits centred between bridge and Stalwart: an empty spacer under
+// each holds it exactly one node gap from both. (Edge numbers are xlabels:
+// plain labels would double the ranks and these gaps with them.)
+spacerl [shape=point,width=0,height=0,style=invis,label=""];
+spacerr [shape=point,width=0,height=0,style=invis,label=""];
+{rank=same; spacerl; provenance; spacerr;}
+spacerl -> provenance -> spacerr [style=invis];
+bridge -> spacerl [style=invis,weight=1000];
+stalwart -> spacerr [style=invis,weight=1000];
+}
+{rank=same; provider; you;}
+you -> webmail [style=invis,weight=1000,minlen=2];
+{rank=same; provenance;}
+
+// in
+provider -> getmail [xlabel="  1  ",weight=1000];
+getmail -> bridge [xlabel="  2  ",weight=1000];
+bridge -> stalwart [xlabel="  3  ",weight=100];
+stalwart:t:e -> webmail:t:w [xlabel="  4  ",constraint=false];
+webmail:r:n -> you:r:s [xlabel="  5  "];
+// out
+you:l:s -> webmail:l:n [xlabel="  6  "];
+webmail:b:w -> stalwart:b:e [xlabel="  7  ",constraint=false];
+stalwart -> relay [xlabel="  8  ",dir=forward,weight=1000];
+relay -> provider [xlabel="  9  "];
+// records
+bridge -> provenance [color="#578478",style=dashed,xlabel="  a  ",fontcolor="#3f6a5f"];
+stalwart -> provenance [color="#578478",style=dashed,xlabel="  b  ",fontcolor="#3f6a5f"];
+
+legend [shape=plain,style="",fillcolor="#ffffff",label=<<TABLE BORDER="0" CELLSPACING="24" CELLPADDING="0"><TR><TD ALIGN="LEFT" VALIGN="TOP" BALIGN="LEFT"><FONT POINT-SIZE="12"><B>In</B></FONT><BR ALIGN="LEFT"/><B>1</B> getmail fetches a copy of each new mail,<BR ALIGN="LEFT"/>   folder by folder; the provider keeps it.<BR ALIGN="LEFT"/><B>2</B> It hands the mail and its folder to the bridge.<BR ALIGN="LEFT"/><B>3</B> Inbox mail is delivered: your filter sorts it.<BR ALIGN="LEFT"/>   The provider's Junk stays junk (unless your<BR ALIGN="LEFT"/>   filter says otherwise); any other folder: the<BR ALIGN="LEFT"/>   mail is put where you had filed it there.<BR ALIGN="LEFT"/><B>4</B> Stalwart shows it to the webmail<BR ALIGN="LEFT"/>   (or to any IMAP client).<BR ALIGN="LEFT"/><B>5</B> You read it.<BR ALIGN="LEFT"/></TD><TD ALIGN="LEFT" VALIGN="TOP" BALIGN="LEFT"><FONT POINT-SIZE="12"><B>Out</B></FONT><BR ALIGN="LEFT"/><B>6</B> You write a mail.<BR ALIGN="LEFT"/><B>7</B> The webmail hands it to Stalwart.<BR ALIGN="LEFT"/><B>8</B> Stalwart passes it to the relay.<BR ALIGN="LEFT"/><B>9</B> The relay sends it through your provider,<BR ALIGN="LEFT"/>   with your login there; the provider delivers<BR ALIGN="LEFT"/>   it, signed as your mail.<BR ALIGN="LEFT"/><BR ALIGN="LEFT"/><FONT POINT-SIZE="12"><B>Remembered</B></FONT><BR ALIGN="LEFT"/><B>a</B> What you had filed at the provider.<BR ALIGN="LEFT"/><B>b</B> What you move, copy or file here yourself.<BR ALIGN="LEFT"/>A changed filter re-sorts old mail, but never these.<BR ALIGN="LEFT"/></TD><TD ALIGN="LEFT" VALIGN="TOP" BALIGN="LEFT"><FONT POINT-SIZE="12"><B>Key</B></FONT><BR ALIGN="LEFT"/><FONT COLOR="#587b96"><B>Solid blue arrow</B></FONT> · the mail travels<BR ALIGN="LEFT"/><FONT COLOR="#578478"><B>Dashed green arrow</B></FONT> · a record is kept<BR ALIGN="LEFT"/>Grey box · outside the stack<BR ALIGN="LEFT"/>Blue box · what you see and use<BR ALIGN="LEFT"/>Green box · the stack's services<BR ALIGN="LEFT"/>Frame · one installation<BR ALIGN="LEFT"/><BR ALIGN="LEFT"/>Not drawn: the re-sorting service,<BR ALIGN="LEFT"/>setup, and the Internet behind<BR ALIGN="LEFT"/>the provider.<BR ALIGN="LEFT"/></TD></TR></TABLE>>];
+spacerr -> legend [style=invis,weight=1000];
+}

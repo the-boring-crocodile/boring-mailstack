@@ -1,0 +1,28 @@
+#!/bin/bash
+# Save or restore a demo's mail state, so --apply runs can be repeated.
+#
+#   tests/resieve/snapshot save|restore DEMO_DIR SNAPSHOT_DIR
+#
+# Stalwart's data and the provenance database; Stalwart is stopped meanwhile.
+# Copied in a container (the files belong to the containers' users).
+set -euo pipefail
+ACTION=$1; DEMO=$(cd "$2" && pwd); SNAP=$3
+PROJECT=$(grep '^DEMO_PROJECT=' "$DEMO/etc/.env" | cut -d= -f2-)
+IMAGE=$(docker inspect -f '{{.Config.Image}}' "$PROJECT-init-1")
+case "$ACTION" in
+    save)    mkdir -p "$SNAP"; chmod 0700 "$SNAP"; FROM=/d; TO=/s ;;
+    restore) [ -d "$SNAP/stalwart-data" ] || { echo "snapshot: no snapshot in $SNAP" >&2; exit 2; }; FROM=/s; TO=/d ;;
+    *) echo "usage: snapshot save|restore DEMO_DIR SNAPSHOT_DIR" >&2; exit 2 ;;
+esac
+SNAP=$(cd "$SNAP" && pwd)
+docker stop "$PROJECT-stalwart-1" >/dev/null
+docker run --rm --network none -v "$DEMO/data:/d" -v "$SNAP:/s" --entrypoint sh "$IMAGE" -c \
+    "rm -rf $TO/stalwart-data $TO/mail-provenance && cp -a $FROM/stalwart-data $FROM/mail-provenance $TO/ 2>/dev/null; \
+     test -d $TO/stalwart-data && test -f $TO/mail-provenance/provenance.sqlite"
+docker start "$PROJECT-stalwart-1" >/dev/null
+for _ in $(seq 1 30); do
+    [ "$(docker inspect -f '{{.State.Health.Status}}' "$PROJECT-stalwart-1")" = healthy ] && break
+    sleep 2
+done
+docker restart "$PROJECT-mail-provenance-1" >/dev/null
+echo "snapshot: $ACTION done ($PROJECT)"

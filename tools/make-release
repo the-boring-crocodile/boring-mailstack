@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Build the release artifact for a tag.
+
+    tools/make-release v2026.10.1 [--out DIR]
+
+Writes DIR/boring-mailstack-<tag>.tar.gz (default DIR: ./dist), containing
+boring-mailstack-<tag>/ with the files of exactly that tag (git archive)
+except pond/ (the operator's own record, never released), VERSION, and
+MANIFEST.sha256 listing every file. No .git: production gets
+the files of one release, not the repository (DECISIONS.md 2026-10-06).
+
+Install it on a host with the release's own tools/deploy (see DEPLOY.md).
+"""
+import argparse
+import hashlib
+import io
+import subprocess
+import sys
+import tarfile
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def git(*args):
+    return subprocess.run(["git", "-C", str(ROOT), *args], check=True,
+                          capture_output=True).stdout
+
+
+def owned_by_root(info):
+    """Entries owned by root:root, so an archive unpacked as root does not
+    hand the release to whichever local user has the builder's uid."""
+    info.uid = info.gid = 0
+    info.uname = info.gname = "root"
+    return info
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("tag")
+    p.add_argument("--out", default=str(ROOT / "dist"))
+    a = p.parse_args()
+
+    try:
+        commit = git("rev-parse", "--verify", f"refs/tags/{a.tag}^{{commit}}").decode().strip()
+    except subprocess.CalledProcessError:
+        sys.exit(f"make-release: no tag {a.tag!r}")
+    name = f"boring-mailstack-{a.tag}"
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    target = out / f"{name}.tar.gz"
+    if target.exists():
+        sys.exit(f"make-release: {target} exists; releases are not rebuilt")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tree = Path(tmp) / name
+        tree.mkdir()
+        archive = git("archive", "--format=tar", commit, "--", ".", ":(exclude)pond")
+        with tarfile.open(fileobj=io.BytesIO(archive)) as t:
+            t.extractall(tree, filter="data")
+        (tree / "VERSION").write_text(a.tag + "\n")
+        (tree / "COMMIT").write_text(commit + "\n")
+        lines = []
+        for f in sorted(x for x in tree.rglob("*") if x.is_file() and x.name != "MANIFEST.sha256"):
+            digest = hashlib.sha256(f.read_bytes()).hexdigest()
+            lines.append(f"{digest}  {f.relative_to(tree).as_posix()}")
+        (tree / "MANIFEST.sha256").write_text("\n".join(lines) + "\n")
+        with tarfile.open(target, "w:gz") as t:
+            t.add(tree, arcname=name, filter=owned_by_root)
+
+    sha = hashlib.sha256(target.read_bytes()).hexdigest()
+    (out / f"{name}.tar.gz.sha256").write_text(f"{sha}  {target.name}\n")
+    print(f"{target}\n  tag {a.tag}, commit {commit[:12]}, {len(lines)} files\n  sha256 {sha}")
+
+
+if __name__ == "__main__":
+    main()

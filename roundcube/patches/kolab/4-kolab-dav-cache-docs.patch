@@ -1,0 +1,47 @@
+From e86a8cee7d76a457a0f69546d5e03d89c5cd70e0 Mon Sep 17 00:00:00 2001
+From: The Boring Crocodile <crocodile@heilig.org>
+Date: Wed, 7 Oct 2026 17:23:03 +0200
+Subject: [PATCH] Document dav_cache, dav_cache_ttl and dav_cache_threshold
+ options
+
+They are read by kolab_dav_client and kolab_storage_dav_cache but were not
+in config.inc.php.dist. With dav_cache_threshold at its default 0, objects
+are fetched from the server one by one whenever they are read in full,
+e.g. for each event a calendar view lists.
+
+Prepared by an AI agent (Claude, Anthropic); reviewed by Wald.
+---
+ plugins/libkolab/config.inc.php.dist | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/plugins/libkolab/config.inc.php.dist b/plugins/libkolab/config.inc.php.dist
+index 3fa1952e..bc8a6545 100644
+--- a/plugins/libkolab/config.inc.php.dist
++++ b/plugins/libkolab/config.inc.php.dist
+@@ -83,6 +83,23 @@ $config['kolab_users_cache_ttl'] = '10d';
+ // 'sharing': Use draft-pot-webdav-resource-sharing standard (for Cyrus-DAV v3)
+ $config['kolab_dav_sharing'] = null;
+ 
++// Cache of the DAV client (server discovery: the user's home folders).
++// A Roundcube cache type (as for imap_cache, e.g. 'db'), or false to disable it.
++// Default: 'db'
++$config['dav_cache'] = 'db';
++
++// Lifetime of entries in the DAV client cache (dav_cache).
++// Possible units: s, m, h, d, w. Default: '10m'
++$config['dav_cache_ttl'] = '10m';
++
++// DAV objects (e.g. events) up to this size are also kept in full in the local
++// groupware cache. Larger ones, and all with the default 0, are fetched from the
++// server one by one whenever they are read in full, e.g. for each event a
++// calendar view lists. A value like '64K' avoids most of these requests.
++// Applies to objects cached after the change (reset the cache for existing ones).
++// Default: 0
++$config['dav_cache_threshold'] = 0;
++
+ // JSON-RPC endpoint configuration of the Bonnie web service providing historic data for groupware objects
+ $config['kolab_bonnie_api'] = null;
+ /*
+-- 
+2.34.1
+

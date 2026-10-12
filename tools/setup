@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""Write etc/, accounts.yaml and folders.yaml for a new boring-mailstack
+home (first installation).
+
+    <unpacked release>/tools/setup HOME --mail-domain example.org [--bind ADDR]
+
+Creates HOME (mode 0755, so the operator can cd in and run `sudo docker
+compose`) with etc/ (generated secrets) and data/ (both 0700), accounts.yaml
+(from accounts.example.yaml) and folders.yaml (0600), owner you; then says what to do next: put your accounts into accounts.yaml and
+deploy. Refuses if HOME/etc/ exists: setup never touches an installation.
+
+Webmail and Stalwart's admin page listen on one address of this machine
+(default: its LAN address, so other computers at home or in the office can
+open them; --bind 127.0.0.1 for this machine only, e.g. behind a reverse
+proxy). Never all interfaces. Both are plain HTTP: put a TLS reverse proxy
+in front for anything beyond the local network.
+
+Options: --webmail-port (default 8801), --admin-port (default 8800).
+Needs python3 only.
+"""
+import argparse
+import ipaddress
+import os
+import re
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.dont_write_bytecode = True        # a release tree stays as its manifest lists it
+sys.path.insert(0, str(ROOT / "tools"))
+import homefiles                       # noqa: E402
+
+# Interfaces that are not this machine's place on the network.
+VIRTUAL = re.compile(r"^(lo|docker\d*|br-|veth|virbr|cni|flannel|vmnet|vboxnet|podman)")
+
+
+def lan_candidates():
+    """IPv4 addresses on this machine's own network interfaces."""
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show", "scope", "global"],
+                             capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        out = ""
+    found = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and not VIRTUAL.match(parts[1]):
+            found.append((parts[1], parts[3].split("/")[0]))
+    return found
+
+
+def routed_address():
+    """The address this machine uses towards the Internet (no packet sent)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 9))      # TEST-NET-1: only picks the route
+            return s.getsockname()[0]
+    except OSError:
+        return None
+
+
+def choose_bind(requested):
+    if requested:
+        try:
+            address = ipaddress.ip_address(requested)
+        except ValueError:
+            sys.exit(f"setup: --bind {requested!r} is not an IP address")
+        if address.is_unspecified:
+            sys.exit("setup: not all interfaces; name one address (--bind)")
+        return requested
+    candidates = lan_candidates()
+    addresses = [a for _, a in candidates]
+    # One private address: the LAN. A public one (a rented server) is not
+    # chosen without asking: webmail and admin page are plain HTTP.
+    if len(addresses) == 1 and ipaddress.ip_address(addresses[0]).is_private:
+        return addresses[0]
+    routed = routed_address()
+    listing = "\n".join(f"  {a:15}  ({i})" for i, a in candidates) or "  (none found)"
+    hint = f"\nThe one towards the Internet is {routed}." if routed else ""
+    sys.exit("setup: which address should webmail and the admin page listen on?\n"
+             f"{listing}{hint}\nRun again with --bind ADDRESS (127.0.0.1: this machine only).")
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("home")
+    p.add_argument("--mail-domain", required=True,
+                   help="your mail domain, e.g. example.org (fills the example account and webmail identities)")
+    p.add_argument("--bind", help="address webmail and admin page listen on (default: the LAN address)")
+    p.add_argument("--webmail-port", type=int, default=8801)
+    p.add_argument("--admin-port", type=int, default=8800)
+    a = p.parse_args()
+
+    domain = a.mail_domain.strip().lower()
+    if not re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+", domain):
+        sys.exit(f"setup: --mail-domain {a.mail_domain!r} is not a domain name")
+    home = Path(a.home).expanduser().absolute()
+    etc = home / "etc"
+    if etc.exists():
+        sys.exit(f"setup: {etc} exists; setup only writes a new one (edit the files instead)")
+    # A home with mail but no etc/ (moved away?): new secrets would lock
+    # everyone out of what is stored with the old ones.
+    if (home / "release").exists() or ((home / "data").is_dir() and any((home / "data").iterdir())):
+        sys.exit(f"setup: {home} already holds an installation (release/ or data/); "
+                 "setup is for a new home only")
+    bind = choose_bind(a.bind)
+
+    old_umask = os.umask(0o077)
+    try:
+        if not home.exists():
+            home.mkdir(parents=True)
+            home.chmod(0o755)   # nothing secret at the top but accounts.yaml and folders.yaml (0600)
+        etc.mkdir(mode=0o700)
+        (home / "data").mkdir(mode=0o700, exist_ok=True)
+        example = (ROOT / "accounts.example.yaml").read_text()
+        homefiles.write(home / "accounts.yaml", example.replace("@example.org", f"@{domain}"))
+        homefiles.write(home / "folders.yaml", (ROOT / "folders.example.yaml").read_text())
+        homefiles.write(etc / "bridge.env", homefiles.bridge_env())
+        homefiles.write(etc / "roundcube" / "config.inc.php", homefiles.roundcube_config(
+            "Webmail", domain, "Your Roundcube settings (written by tools/setup; edit freely)."))
+        env, _ = homefiles.stack_env(bind, a.webmail_port, a.admin_port)
+        homefiles.write(etc / ".env", env)
+    finally:
+        os.umask(old_umask)
+
+    print(f"""setup: wrote {home}/accounts.yaml, folders.yaml, etc/ (bridge.env, .env, roundcube/config.inc.php) and data/
+
+Next:
+  1. Put your mailboxes into {home}/accounts.yaml
+     (one entry per address: provider logins for fetching and sending;
+     the example entry shows every setting). Deploy refuses while a
+     CHANGE-ME is left in it.
+  2. Only for providers that do not mark their Sent, Junk, Trash ...
+     folders: say which are which in {home}/folders.yaml (it holds a
+     mapping for Hetzner mailboxes).
+  3. Deploy:  sudo {ROOT}/tools/deploy {home}
+     Afterwards, in {home}: docker compose down / docker compose up -d
+     stop and start it (and apply changed accounts.yaml or folders.yaml).
+  4. Open http://{bind}:{a.webmail_port}/ and log in with an address from
+     accounts.yaml and its provider password.
+Stalwart's admin page: http://{bind}:{a.admin_port}/ (user admin, password
+STALWART_ADMIN_PASSWORD in {etc}/.env; set at every start).
+Both pages are plain HTTP; beyond your own network, put a TLS reverse proxy
+in front (and use --bind 127.0.0.1).""")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,110 @@
+From 212affe7125a961d1033c2f5163afd251f7b671e Mon Sep 17 00:00:00 2001
+From: The Boring Crocodile <crocodile@heilig.org>
+Date: Wed, 7 Oct 2026 17:25:32 +0200
+Subject: [PATCH] Fix SQLite schema install and upgrade (duplicate index names)
+
+Index names are global in SQLite.
+
+- sqlite.initial.sql created ix_contact_type on kolab_cache_contact and
+  on kolab_cache_dav_contact, so a fresh install failed. The second index
+  is now ix_dav_contact_type.
+- 2022122800.sql created the same duplicate before kolab_cache_dav_event
+  and kolab_cache_dav_task, so upgrades stopped there; running it again
+  failed on the table it had created. It now uses the new name and
+  IF NOT EXISTS, so installations stuck there recover.
+- 2023111200.sql created ix_resource_type while the renamed old table
+  still held that name; the old table is now dropped first.
+- 2026100700.sql adds ix_dav_contact_type where it is missing. Versions are
+  per driver directory, so MySQL and PostgreSQL need no such script.
+
+Tested with bin/updatedb.sh on Roundcube 1.7.4: upgrade from 2021101100,
+an installation stuck at 2022122800, a fresh install, and one where the
+index had been skipped.
+
+Prepared by an AI agent (Claude, Anthropic); reviewed by Wald.
+---
+ plugins/libkolab/SQL/sqlite.initial.sql    | 4 ++--
+ plugins/libkolab/SQL/sqlite/2022122800.sql | 8 ++++----
+ plugins/libkolab/SQL/sqlite/2023111200.sql | 6 ++++--
+ plugins/libkolab/SQL/sqlite/2026100700.sql | 4 ++++
+ 4 files changed, 14 insertions(+), 8 deletions(-)
+ create mode 100644 plugins/libkolab/SQL/sqlite/2026100700.sql
+
+diff --git a/plugins/libkolab/SQL/sqlite.initial.sql b/plugins/libkolab/SQL/sqlite.initial.sql
+index 79578405..247c375b 100644
+--- a/plugins/libkolab/SQL/sqlite.initial.sql
++++ b/plugins/libkolab/SQL/sqlite.initial.sql
+@@ -156,7 +156,7 @@ CREATE TABLE kolab_cache_dav_contact (
+   PRIMARY KEY(folder_id, uid)
+ );
+ 
+-CREATE INDEX ix_contact_type ON kolab_cache_dav_contact(folder_id, type);
++CREATE INDEX ix_dav_contact_type ON kolab_cache_dav_contact(folder_id, type);
+ 
+ CREATE TABLE kolab_cache_dav_event (
+   folder_id INTEGER NOT NULL,
+@@ -198,4 +198,4 @@ CREATE TABLE kolab_cache_dav_note (
+   PRIMARY KEY(folder_id, uid)
+ );
+ 
+-INSERT INTO system (name, value) VALUES ('libkolab-version', '2026013000');
++INSERT INTO system (name, value) VALUES ('libkolab-version', '2026100700');
+diff --git a/plugins/libkolab/SQL/sqlite/2022122800.sql b/plugins/libkolab/SQL/sqlite/2022122800.sql
+index 65251e1d..cb04837a 100644
+--- a/plugins/libkolab/SQL/sqlite/2022122800.sql
++++ b/plugins/libkolab/SQL/sqlite/2022122800.sql
+@@ -1,4 +1,4 @@
+-CREATE TABLE kolab_cache_dav_contact (
++CREATE TABLE IF NOT EXISTS kolab_cache_dav_contact (
+   folder_id INTEGER NOT NULL,
+   uid VARCHAR(512) NOT NULL,
+   etag VARCHAR(128) NOT NULL,
+@@ -15,9 +15,9 @@ CREATE TABLE kolab_cache_dav_contact (
+   PRIMARY KEY(folder_id, uid)
+ );
+ 
+-CREATE INDEX ix_contact_type ON kolab_cache_dav_contact(folder_id, type);
++CREATE INDEX IF NOT EXISTS ix_dav_contact_type ON kolab_cache_dav_contact(folder_id, type);
+ 
+-CREATE TABLE kolab_cache_dav_event (
++CREATE TABLE IF NOT EXISTS kolab_cache_dav_event (
+   folder_id INTEGER NOT NULL,
+   uid VARCHAR(512) NOT NULL,
+   etag VARCHAR(128) NOT NULL,
+@@ -31,7 +31,7 @@ CREATE TABLE kolab_cache_dav_event (
+   PRIMARY KEY(folder_id, uid)
+ );
+ 
+-CREATE TABLE kolab_cache_dav_task (
++CREATE TABLE IF NOT EXISTS kolab_cache_dav_task (
+   folder_id INTEGER NOT NULL,
+   uid VARCHAR(512) NOT NULL,
+   etag VARCHAR(128) NOT NULL,
+diff --git a/plugins/libkolab/SQL/sqlite/2023111200.sql b/plugins/libkolab/SQL/sqlite/2023111200.sql
+index 21430fbe..d9e10378 100644
+--- a/plugins/libkolab/SQL/sqlite/2023111200.sql
++++ b/plugins/libkolab/SQL/sqlite/2023111200.sql
+@@ -14,6 +14,8 @@ CREATE TABLE kolab_folders (
+ INSERT INTO kolab_folders (folder_id, resource, type, synclock, ctag, changed)
+     SELECT folder_id, resource, type, synclock, ctag, changed FROM kolab_folders_old;
+ 
+-CREATE INDEX ix_resource_type ON kolab_folders(resource, type);
+-
++-- Drop the old table first: the renamed table keeps its index, whose name
++-- (index names are global in SQLite) the new table's index needs
+ DROP TABLE kolab_folders_old;
++
++CREATE INDEX ix_resource_type ON kolab_folders(resource, type);
+diff --git a/plugins/libkolab/SQL/sqlite/2026100700.sql b/plugins/libkolab/SQL/sqlite/2026100700.sql
+new file mode 100644
+index 00000000..f74da4d6
+--- /dev/null
++++ b/plugins/libkolab/SQL/sqlite/2026100700.sql
+@@ -0,0 +1,4 @@
++-- The index on kolab_cache_dav_contact had the name of the one on
++-- kolab_cache_contact (ix_contact_type); index names are global in SQLite, so
++-- it could not be created (see 2022122800.sql). Create it where it is missing.
++CREATE INDEX IF NOT EXISTS ix_dav_contact_type ON kolab_cache_dav_contact(folder_id, type);
+-- 
+2.34.1
+

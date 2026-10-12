@@ -1,0 +1,229 @@
+From a21cd78ea50c0a32d1ea0134aa38c59211a75b14 Mon Sep 17 00:00:00 2001
+From: The Boring Crocodile <crocodile@heilig.org>
+Date: Thu, 8 Oct 2026 19:32:53 +0200
+Subject: [PATCH] feat: allow to configure a subfolder count property for exact
+ expand arrows
+
+At the last loaded level of the folder tree every folder gets an
+optimistic expand arrow, also folders without subfolders. The new
+roundav_folder_count_property setting names a WebDAV property holding a
+folder's number of subfolders (Nextcloud:
+{http://nextcloud.org/ns}contained-folder-count). When set, the listing
+asks for it in the same PROPFIND, and a folder with none shows no arrow.
+Unset (default), the listing is unchanged.
+
+On servers that report the property, this makes roundav_tree_depth = 1
+(one request per opened folder) look exactly like the full tree.
+
+Prepared by an AI agent (Claude, Anthropic); reviewed by Wald.
+---
+ config.inc.php.dist          |  8 +++++
+ lib/PatchedWebDAVAdapter.php | 57 +++++++++++++++++++++++++++++++++++
+ lib/roundav_files_engine.php | 58 +++++++++++++++++++++++++++++-------
+ 3 files changed, 112 insertions(+), 11 deletions(-)
+
+diff --git a/config.inc.php.dist b/config.inc.php.dist
+index 1d5f422..43814fe 100644
+--- a/config.inc.php.dist
++++ b/config.inc.php.dist
+@@ -50,3 +50,11 @@ $config['roundav_search_threads'] = 1;
+ 
+ // Folder levels the folder tree loads per request (default 2).
+ $config['roundav_tree_depth'] = 2;
++
++// WebDAV property holding a folder's number of subfolders, asked for in the same PROPFIND
++// as the folder listing: a folder of the last loaded level without subfolders then shows
++// no expand arrow. null (default): not asked; every folder of the last loaded level gets
++// an arrow until it is opened.
++$config['roundav_folder_count_property'] = null;
++// Nextcloud:
++// $config['roundav_folder_count_property'] = '{http://nextcloud.org/ns}contained-folder-count';
+diff --git a/lib/PatchedWebDAVAdapter.php b/lib/PatchedWebDAVAdapter.php
+index 3230e0f..cf33fb3 100644
+--- a/lib/PatchedWebDAVAdapter.php
++++ b/lib/PatchedWebDAVAdapter.php
+@@ -2,7 +2,9 @@
+ 
+ use League\Flysystem\Config;
+ use League\Flysystem\UnableToCreateDirectory;
++use League\Flysystem\UnableToListContents;
+ use League\Flysystem\WebDAV\WebDAVAdapter;
++use Sabre\DAV\Xml\Property\ResourceType;
+ 
+ /**
+  * Patched WebDAVAdapter that fixes the createDirectory bug.
+@@ -17,6 +19,61 @@ use League\Flysystem\WebDAV\WebDAVAdapter;
+  */
+ class PatchedWebDAVAdapter extends WebDAVAdapter
+ {
++    /**
++     * The subfolders of a directory, with how many folders each contains where the
++     * server reports it in $countProperty, in one PROPFIND.
++     *
++     * @param string $path a normalized path, as Filesystem passes to listContents()
++     * @param string $countProperty the property in Clark notation, e.g. Nextcloud's
++     *                              {http://nextcloud.org/ns}contained-folder-count
++     * @return array<array-key,int|null> path (as listContents() gives it; a numeric
++     *                                   name becomes an int key) => folder count or null
++     */
++    public function listDirectories(string $path, string $countProperty): array
++    {
++        $reflection = new ReflectionClass(WebDAVAdapter::class);
++
++        $prefixerProp = $reflection->getProperty('prefixer');
++        $clientProp   = $reflection->getProperty('client');
++
++        // setAccessible() is required before PHP 8.1; deprecated (no-op) from 8.1 onward.
++        if (PHP_VERSION_ID < 80100) {
++            $prefixerProp->setAccessible(true);
++            $clientProp->setAccessible(true);
++        }
++
++        $prefixer = $prefixerProp->getValue($this);
++        $client   = $clientProp->getValue($this);
++
++        try {
++            $location = $this->encodePath($prefixer->prefixDirectoryPath($path));
++            $response = $client->propFind($location, ['{DAV:}resourcetype', '{DAV:}iscollection', $countProperty], 1);
++
++            // The directory itself comes first.
++            array_shift($response);
++
++            $folders = [];
++            foreach ($response as $href => $props) {
++                // A folder as Flysystem decides it (WebDAVAdapter::propsIsDirectory()).
++                $type = $props['{DAV:}resourcetype'] ?? null;
++                $isDir = $type instanceof ResourceType
++                    ? $type->is('{DAV:}collection')
++                    : ($props['{DAV:}iscollection'] ?? null) === '1';
++                if (!$isDir) {
++                    continue;
++                }
++                $child = $prefixer->stripPrefix((string) parse_url(rawurldecode($href), PHP_URL_PATH));
++                $count = $props[$countProperty] ?? null;
++                $folders[trim($child, '/')] = is_numeric($count) ? (int) $count : null;
++            }
++        } catch (Throwable $exception) {
++            // As listContents() reports a failed listing.
++            throw UnableToListContents::atLocation($path, false, $exception);
++        }
++
++        return $folders;
++    }
++
+     public function createDirectory(string $path, Config $config): void
+     {
+         $reflection = new ReflectionClass(WebDAVAdapter::class);
+diff --git a/lib/roundav_files_engine.php b/lib/roundav_files_engine.php
+index 15ee80e..1edc78e 100644
+--- a/lib/roundav_files_engine.php
++++ b/lib/roundav_files_engine.php
+@@ -2,6 +2,7 @@
+ 
+ use Sabre\DAV\Client;
+ use League\Flysystem\Filesystem;
++use League\Flysystem\WhitespacePathNormalizer;
+ use League\FlySystem\StorageAttributes;
+ require_once __DIR__ . '/PatchedWebDAVAdapter.php';
+ class roundav_files_engine
+@@ -26,6 +27,19 @@ class roundav_files_engine
+      */
+     protected $filesystem;
+ 
++    /**
++     * @var PatchedWebDAVAdapter|null
++     */
++    protected $adapter;
++
++    /**
++     * WebDAV property holding a folder's number of subfolders (roundav_folder_count_property),
++     * or null: not asked.
++     *
++     * @var string|null
++     */
++    protected $folder_count_property;
++
+     const API_VERSION = 2;
+ 
+ 
+@@ -64,6 +78,9 @@ class roundav_files_engine
+         }
+ 
+         $adapter = new PatchedWebDAVAdapter($client, $plugin->rc->config->get('driver_webdav_prefix'));
++        $this->adapter = $adapter;
++        $count_property = $plugin->rc->config->get('roundav_folder_count_property');
++        $this->folder_count_property = is_string($count_property) && $count_property !== '' ? $count_property : null;
+         $this->filesystem = new Filesystem($adapter);
+     }
+ 
+@@ -1024,9 +1041,11 @@ class roundav_files_engine
+      * Handler for "folders list" function
+      *
+      * Two modes:
+-     *  - default (lazy): returns a subtree bounded to `depth` levels (default: the roundav_tree_depth setting, 2) below the
+-     *    `folder` base (default root). Boundary folders at the deepest level get an optimistic
+-     *    toggle so the client can lazily request the next batch on expand.
++     *  - default (lazy): returns a subtree bounded to `depth` levels (default: the
++     *    roundav_tree_depth setting, 2) below the `folder` base (default root). Boundary
++     *    folders at the deepest level get a toggle from their subfolder count where the server
++     *    reports one (roundav_folder_count_property), else an optimistic one, so the client
++     *    can lazily request the next batch on expand.
+      *  - flat=true: returns the complete recursive list of folder paths (strings). Only used by
+      *    the "search all folders" / collection features, which must scan the whole tree.
+      */
+@@ -1182,19 +1201,34 @@ class roundav_files_engine
+             list($dir, $level) = array_shift($queue);
+             $isBoundary = $level >= $depthLimit;
+ 
+-            $children = $this->filesystem->listContents($dir, false)
+-                ->filter(fn (StorageAttributes $attributes) => $attributes->isDir());
++            // Subfolders (path => subfolder count, or null when unknown). With
++            // roundav_folder_count_property set, the counts come in the same PROPFIND; the
++            // path is normalized (no "..") as Filesystem::listContents() does before it
++            // reaches the adapter. Both return decoded paths: decoding again would turn "+"
++            // into a space and "%41" into "A".
++            if ($this->folder_count_property !== null) {
++                $children = $this->adapter->listDirectories(
++                    (new WhitespacePathNormalizer())->normalizePath($dir), $this->folder_count_property);
++            }
++            else {
++                $children = array();
++                $listing = $this->filesystem->listContents($dir, false)
++                    ->filter(fn (StorageAttributes $attributes) => $attributes->isDir());
++                foreach ($listing as $child) {
++                    $children[$child->path()] = null;
++                }
++            }
+ 
+-            // listContents() already returns decoded paths: decoding again would turn "+" into
+-            // a space and "%41" into "A".
+             $decoded = array();
+-            foreach ($children as $child) {
+-                $decoded[] = $child->path();
++            $counts  = array();
++            foreach ($children as $childPath => $count) {
++                $decoded[] = (string) $childPath;
++                $counts[(string) $childPath] = $count;
+             }
+ 
+             // Sorting each batch is enough: the BFS is level-order (so parents still come
+             // before children) and the client appends every row into its own parent's
+-            // <ul.subfolders>, so only the order *within* one listContents() call is visible.
++            // <ul.subfolders>, so only the order *within* one directory's listing is visible.
+             $ranks = $this->name_ranks(array_map('basename', $decoded));
+             usort($decoded, fn ($a, $b) => $ranks[basename($a)] <=> $ranks[basename($b)]);
+ 
+@@ -1204,7 +1238,9 @@ class roundav_files_engine
+                 $entries[$displayPath] = array(
+                     'path'         => $displayPath,
+                     'depth'        => $baseDepth + $level,
+-                    'has_children' => $isBoundary, // optimistic for boundary; corrected below otherwise
++                    // Boundary: the server's count if it gave one, else optimistic.
++                    // Interior nodes are corrected below.
++                    'has_children' => $isBoundary && ($counts[$path] ?? 1) > 0,
+                     'boundary'     => $isBoundary,
+                 );
+ 
+-- 
+2.34.1
+

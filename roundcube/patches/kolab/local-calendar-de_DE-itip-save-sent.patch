@@ -1,0 +1,12 @@
+diff --git a/plugins/calendar/localization/de_DE.inc b/plugins/calendar/localization/de_DE.inc
+index 0216a01d..1b87c91e 100644
+--- a/plugins/calendar/localization/de_DE.inc
++++ b/plugins/calendar/localization/de_DE.inc
+@@ -28,6 +28,7 @@ $labels['afterflagdeleted'] = 'Als gelöscht markieren';
+ $labels['aftermoveto'] = 'Verschiebe nach...';
+ $labels['itipoptions'] = 'Veranstaltungseinladungen';
+ $labels['afteraction'] = 'Nachdem eine Einladungs- oder Aktualisierungsnachricht verarbeitet wurde';
++$labels['itipsavesent'] = 'Gesendete Einladungen und Antworten im Ordner "Gesendet" speichern';
+ $labels['weeknonone'] = 'nie';
+ $labels['calendar'] = 'Kalender';
+ $labels['calendars'] = 'Kalender';

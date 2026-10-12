@@ -1,0 +1,18 @@
+#!/bin/bash
+# resieve by hand for one account, in the running resieve-watch container
+# (resieve/watch.py owns how resieve is run for an account: login,
+# provenance key, never_move_from). Dry run unless --apply.
+#
+#   tools/resieve ACCOUNT [--apply] [--limit N] [--mailbox PATH]
+set -euo pipefail
+
+# shellcheck source=layout.sh
+. "$(dirname "${BASH_SOURCE[0]}")/layout.sh"
+
+if (($# < 1)); then
+    echo "usage: tools/resieve ACCOUNT [--apply] [--limit N] [--mailbox PATH]" >&2
+    exit 2
+fi
+
+# mailstack_compose is a shell function, so no exec.
+mailstack_compose exec -T resieve-watch python3 /usr/local/bin/resieve-watch resieve "$@"

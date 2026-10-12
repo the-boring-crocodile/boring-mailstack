@@ -1,0 +1,26 @@
+From 394d6bbdb27444b5dd3bc8ac9154797d91071701 Mon Sep 17 00:00:00 2001
+From: The Boring Crocodile <crocodile@heilig.org>
+Date: Wed, 7 Oct 2026 17:21:44 +0200
+Subject: [PATCH] Fix PHP warning in caldav_calendar::list_events()
+
+Prepared by an AI agent (Claude, Anthropic); reviewed by Wald.
+---
+ plugins/calendar/drivers/caldav/caldav_calendar.php | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/plugins/calendar/drivers/caldav/caldav_calendar.php b/plugins/calendar/drivers/caldav/caldav_calendar.php
+index d84e351b..8d0963aa 100644
+--- a/plugins/calendar/drivers/caldav/caldav_calendar.php
++++ b/plugins/calendar/drivers/caldav/caldav_calendar.php
+@@ -266,7 +266,7 @@ class caldav_calendar extends kolab_storage_dav_folder
+             // remember seen categories
+             if (!empty($event['categories'])) {
+                 $cat = is_array($event['categories']) ? $event['categories'][0] : $event['categories'];
+-                $this->categories[$cat]++;
++                $this->categories[$cat] = ($this->categories[$cat] ?? 0) + 1;
+             }
+ 
+             // list events in requested time window
+-- 
+2.34.1
+

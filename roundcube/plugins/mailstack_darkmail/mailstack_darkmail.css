@@ -1,0 +1,25 @@
+/* boring-mailstack: HTML mail in dark mode (see mailstack_darkmail.php).
+   Everything here applies in dark mode only (html.dark-mode, set by Elastic). */
+
+/* auto: a mail without its own colours */
+html.dark-mode .message-htmlpart.mailstack-darkmail-dark {
+    background-color: transparent !important;
+    color: #c5d1d3 !important;  /* Elastic's dark-mode text colour */
+}
+html.dark-mode .message-htmlpart.mailstack-darkmail-dark .mailstack-darkmail-clear {
+    background-color: transparent !important;
+}
+html.dark-mode .message-htmlpart.mailstack-darkmail-dark .mailstack-darkmail-recolor {
+    color: var(--mailstack-darkmail-color) !important;
+}
+
+/* invert: every HTML mail; pictures turned back. Only the outermost one:
+   a picture inside another (an img in a <picture>, in an <svg>, in a cell
+   with a background picture) is already turned back with it. */
+html.dark-mode .message-htmlpart.mailstack-darkmail-invert {
+    filter: invert(1) hue-rotate(180deg);
+}
+/* One compound selector: no space between :is() and :not(). */
+html.dark-mode .message-htmlpart.mailstack-darkmail-invert :is(img, picture, video, canvas, svg, .mailstack-darkmail-picture):not(:is(picture, svg, .mailstack-darkmail-picture) *) {
+    filter: invert(1) hue-rotate(180deg);
+}

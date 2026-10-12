@@ -1,0 +1,134 @@
+# Demo overlay: the production compose.yaml plus a simulated mail provider.
+#
+#   docker compose -f compose.yaml -f demo/compose.demo.yaml ...
+#
+# Run it through tools/demo, which creates the demo directory (DEMO_DIR):
+# certificates, accounts, secrets and state for one throwaway demo.
+#
+# What this overlay changes, and why:
+#   - demo-provider: GreenMail as the four characters' mail provider
+#     (IMAPS 3993, SMTPS 3465) under provider-style host names, with a
+#     certificate from a throwaway demo CA.
+#   - demo-seed: renders the Operation Lighthouse story (demo/story) into
+#     real mails and files them at the provider BEFORE the stack's first
+#     import (getmail waits for it).
+#   - getmail and the relay trust ONLY the demo CA, so a demo can never
+#     talk to a real provider, even by mistake.
+#   - mail-internal becomes internal: no mail leaves the demo. Only
+#     Stalwart gets a separate egress network (it needs DNS to start), and
+#     Roundcube one for its published port.
+#   - demo-cloud: "Pond Cloud", a stand-in for the Nextcloud a real
+#     installation's users bring (demo/cloud): calendars, addressbooks and
+#     files under Nextcloud's paths, plain HTTP on the internal network.
+#     Roundcube gets a demo-only RCMCardDAV preset for it (written by
+#     tools/demo), so every character has Contacts, Calendar and cloud
+#     files at first login -- in production each user adds their own.
+#   - Stalwart's bootstrap script is mounted from DEMO_DIR, where it is
+#     world-readable: on a rootless daemon Stalwart's own user cannot read
+#     the source tree's 0750 copy.
+
+services:
+  demo-provider:
+    # GreenMail standalone, pinned by digest.
+    image: greenmail/standalone@sha256:1ef95a966418cd09b7ea91d504d8c0826bbe7a2f6e679a75c601a831587c1626
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.imaps
+        -Dgreenmail.setup.test.smtps
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.startup.timeout=20000
+        -Dgreenmail.users.login=email
+        -Dgreenmail.users=${DEMO_PROVIDER_USERS:?Set by tools/demo}
+        -Dgreenmail.tls.keystore.file=/run/demo/provider.p12
+        -Dgreenmail.tls.keystore.password=${DEMO_KEYSTORE_PASSWORD:?Set by tools/demo}
+    volumes:
+      - ${DEMO_DIR:?Set by tools/demo}/provider/provider.p12:/run/demo/provider.p12:ro
+    restart: "no"
+    networks:
+      mail-internal:
+        aliases:
+          - mail.provider.test
+
+  demo-seed:
+    image: boring-mailstack-init:${MAILSTACK_RELEASE:?}
+    entrypoint: ["python3", "/demo/seed/seed.py"]
+    depends_on:
+      demo-provider:
+        condition: service_started
+    environment:
+      DEMO_PROVIDER_HOST: mail.provider.test
+      DEMO_PROVIDER_IMAP_PORT: "3993"
+      DEMO_CA_FILE: /run/demo/ca.crt
+      DEMO_ACCOUNTS: /run/demo/accounts.json
+      DEMO_TZ: ${DEMO_TZ:-Europe/London}
+    volumes:
+      - ./demo:/demo:ro
+      - ${DEMO_DIR:?}/provider/ca.crt:/run/demo/ca.crt:ro
+      - ${DEMO_DIR:?}/seed-accounts.json:/run/demo/accounts.json:ro
+    restart: "no"
+    networks:
+      - mail-internal
+
+  demo-cloud:
+    # The Roundcube image brings PHP and sabre/dav (via Roundav).
+    image: boring-mailstack-roundcube:${MAILSTACK_RELEASE:?}
+    entrypoint: ["sh", "-c", "php /demo/cloud/seed.php && exec php -S 0.0.0.0:8080 /demo/cloud/server.php"]
+    environment:
+      DEMO_TZ: ${DEMO_TZ:-Europe/London}
+      PHP_CLI_SERVER_WORKERS: "4"
+    volumes:
+      - ./demo:/demo:ro
+      - ${DEMO_DIR:?}/cloud-users.json:/run/demo/users.json:ro
+    restart: "no"
+    networks:
+      # Roundcube's network: Roundcube reaches the cloud, as a user's own
+      # Nextcloud on the Internet.
+      webmail:
+        aliases:
+          - cloud.pond.test
+
+  stalwart:
+    volumes:
+      - ${DEMO_DIR:?}/stalwart-bootstrap.sh:/usr/local/bin/mailstack-stalwart-bootstrap:ro
+    networks:
+      stalwart-egress:
+        gw_priority: 1
+
+  mail-getmail:
+    depends_on:
+      demo-seed:
+        condition: service_completed_successfully
+    environment:
+      SCAN_INTERVAL: "30"
+      SSL_CERT_FILE: /run/demo/ca.crt
+      CURL_CA_BUNDLE: /run/demo/ca.crt
+    volumes:
+      - ${DEMO_DIR:?}/provider/ca.crt:/run/demo/ca.crt:ro
+      # getmail verifies the provider against this bundle (ca_certs in its
+      # configuration). Only the demo CA is in it.
+      - ${DEMO_DIR:?}/provider/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
+
+  mail-relay:
+    volumes:
+      # Postfix verifies the provider against this bundle, inside and
+      # outside its chroot. Only the demo CA is in it.
+      - ${DEMO_DIR:?}/provider/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
+      - ${DEMO_DIR:?}/provider/ca.crt:/var/spool/postfix/etc/ssl/certs/ca-certificates.crt:ro
+
+  roundcube:
+    volumes:
+      # The release's RCMCardDAV settings plus the demo's Pond Cloud preset.
+      - ${DEMO_DIR:?}/carddav-config.inc.php:/usr/src/roundcubemail/plugins/carddav/config.inc.php:ro
+    networks:
+      demo-web:
+
+networks:
+  mail-internal:
+    internal: true
+  # No Internet in the demo; demo-web only publishes Roundcube's port.
+  webmail:
+    internal: true
+  stalwart-egress:
+    driver: bridge
+  demo-web:
+    driver: bridge

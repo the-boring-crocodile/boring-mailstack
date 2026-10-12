@@ -1,0 +1,51 @@
+#!/bin/bash
+# resieve against a demo account, timed (dry-run unless --apply).
+#
+#   tests/resieve/bench DEMO_DIR ACCOUNT [--apply] [--limit N] [--mailbox PATH] [--full-messages]
+#
+# DEMO_DIR is a demo made by tools/demo (its etc/.env names the Compose
+# project). Builds the resieve binary from this tree with cargo in
+# resieve/Dockerfile's pinned Rust image (two jobs, pids limit; see tests/unit/run.sh) and runs it
+# in debian:bookworm-slim -- the release image's base -- on the demo's mail
+# network, with the account's Stalwart login and the demo's provenance
+# database (writable: a complete run removes stale provenance entries, also
+# in a dry run), as resieve-watch runs it in an installed release. Prints resieve's
+# own summary lines and the wall time.
+set -euo pipefail
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+DEMO=$(cd "$1" && pwd); ACCOUNT=$2; shift 2
+PROJECT=$(grep '^DEMO_PROJECT=' "$DEMO/etc/.env" | cut -d= -f2-)
+[ -n "$PROJECT" ] || { echo "bench: $DEMO/etc/.env has no DEMO_PROJECT" >&2; exit 2; }
+ENVS=(-e "RESIEVE_ACCOUNT=$ACCOUNT"
+      -e "RESIEVE_URL=https://stalwart.mailstack.local/jmap/session"
+      -e "RESIEVE_PROVENANCE_DB=/provenance/provenance.sqlite")
+while (($#)); do
+    case "$1" in
+        --apply) ENVS+=(-e RESIEVE_APPLY=1); shift ;;
+        --limit) ENVS+=(-e "RESIEVE_LIMIT=$2"); shift 2 ;;
+        --mailbox) ENVS+=(-e "RESIEVE_MAILBOX=$2"); shift 2 ;;
+        --full-messages) ENVS+=(-e RESIEVE_FULL_MESSAGES=1); shift ;;
+        *) echo "bench: unknown argument $1" >&2; exit 2 ;;
+    esac
+done
+# The account's Stalwart login (its real address) and password, as init wrote them.
+LOGIN_AND_PASSWORD=$(python3 -c "import json,sys; a=next(a for a in json.load(open(sys.argv[1])) if a['id']==sys.argv[2]); print(a['login']); print(a['password'])" \
+    "$DEMO/data/generated/stalwart-accounts.json" "$ACCOUNT")
+LOGIN=${LOGIN_AND_PASSWORD%%$'\n'*}
+PASSWORD=${LOGIN_AND_PASSWORD#*$'\n'}
+
+RUST_IMAGE=$(sed -n 's/^FROM \(rust:[^ ]*\) AS builder$/\1/p' "$ROOT/resieve/Dockerfile")
+[ -n "$RUST_IMAGE" ] || { echo "no rust image in resieve/Dockerfile" >&2; exit 2; }
+echo "bench: building resieve (release) ..." >&2
+docker run --rm --pids-limit 200 -v "$ROOT/resieve:/src:ro" -v resieve-test-target:/target \
+    -v resieve-test-cargo:/usr/local/cargo/registry -e CARGO_TARGET_DIR=/target -e CARGO_BUILD_JOBS=2 \
+    -w /src "$RUST_IMAGE" cargo build --release --locked --quiet >&2
+
+echo "bench: $PROJECT account=$ACCOUNT $(date -Is)" >&2
+start=$(date +%s.%N)
+docker run --rm --network "${PROJECT}_mail-internal" -v resieve-test-target:/target:ro \
+    -v "$DEMO/data/mail-provenance:/provenance" "${ENVS[@]}" -e "RESIEVE_USERNAME=$LOGIN" -e "RESIEVE_PASSWORD=$PASSWORD" \
+    debian:bookworm-slim /target/release/mailstack-resieve \
+    | grep --line-buffered -v -E '^resieve: mailbox "'
+end=$(date +%s.%N)
+echo "bench: wall $(python3 -c "print(round($end - $start, 1))") s"
