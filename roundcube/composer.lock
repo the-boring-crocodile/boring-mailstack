@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "297f0f10f82c68f3b95ed0b8da687a0e",
+    "content-hash": "aebcb59715bcecb52eadf7fc790d2c26",
     "packages": [
         {
             "name": "bacon/bacon-qr-code",
@@ -1179,24 +1179,24 @@
         },
         {
             "name": "masterminds/html5",
-            "version": "2.9.0",
+            "version": "2.11.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Masterminds/html5-php.git",
-                "reference": "f5ac2c0b0a2eefca70b2ce32a5809992227e75a6"
+                "reference": "a1e7a2f88ee13635d86fc61cfbdf2306a76ddfc7"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Masterminds/html5-php/zipball/f5ac2c0b0a2eefca70b2ce32a5809992227e75a6",
-                "reference": "f5ac2c0b0a2eefca70b2ce32a5809992227e75a6",
+                "url": "https://api.github.com/repos/Masterminds/html5-php/zipball/a1e7a2f88ee13635d86fc61cfbdf2306a76ddfc7",
+                "reference": "a1e7a2f88ee13635d86fc61cfbdf2306a76ddfc7",
                 "shasum": ""
             },
             "require": {
                 "ext-dom": "*",
-                "php": ">=5.3.0"
+                "php": ">=7.4"
             },
             "require-dev": {
-                "phpunit/phpunit": "^4.8.35 || ^5.7.21 || ^6 || ^7 || ^8 || ^9"
+                "phpunit/phpunit": "^6 || ^7 || ^8 || ^9 || ^10"
             },
             "type": "library",
             "extra": {
@@ -1240,22 +1240,22 @@
             ],
             "support": {
                 "issues": "https://github.com/Masterminds/html5-php/issues",
-                "source": "https://github.com/Masterminds/html5-php/tree/2.9.0"
+                "source": "https://github.com/Masterminds/html5-php/tree/2.11.0"
             },
-            "time": "2024-03-31T07:05:07+00:00"
+            "time": "2026-08-18T06:18:41+00:00"
         },
         {
             "name": "mlocati/ip-lib",
-            "version": "1.22.0",
+            "version": "1.22.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/mlocati/ip-lib.git",
-                "reference": "4e40ffd3bf9989db19403d89c4d8be44b87b8a91"
+                "reference": "f096c0e9ec8bd4691ee45394cfb77c97c6bba272"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/mlocati/ip-lib/zipball/4e40ffd3bf9989db19403d89c4d8be44b87b8a91",
-                "reference": "4e40ffd3bf9989db19403d89c4d8be44b87b8a91",
+                "url": "https://api.github.com/repos/mlocati/ip-lib/zipball/f096c0e9ec8bd4691ee45394cfb77c97c6bba272",
+                "reference": "f096c0e9ec8bd4691ee45394cfb77c97c6bba272",
                 "shasum": ""
             },
             "require": {
@@ -1301,7 +1301,7 @@
             ],
             "support": {
                 "issues": "https://github.com/mlocati/ip-lib/issues",
-                "source": "https://github.com/mlocati/ip-lib/tree/1.22.0"
+                "source": "https://github.com/mlocati/ip-lib/tree/1.22.1"
             },
             "funding": [
                 {
@@ -1313,7 +1313,7 @@
                     "type": "other"
                 }
             ],
-            "time": "2025-10-15T12:35:09+00:00"
+            "time": "2026-09-17T09:24:44+00:00"
         },
         {
             "name": "mstilkerich/carddavclient",
@@ -1702,43 +1702,37 @@
         },
         {
             "name": "pear/crypt_gpg",
-            "version": "v1.7.0",
+            "version": "v2.0.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/pear/Crypt_GPG.git",
-                "reference": "f300cc7873e5265e5b413028f21a3e62028782e5"
+                "reference": "7024573e03fddd1bf744e93da576efe35da15a32"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/pear/Crypt_GPG/zipball/f300cc7873e5265e5b413028f21a3e62028782e5",
-                "reference": "f300cc7873e5265e5b413028f21a3e62028782e5",
+                "url": "https://api.github.com/repos/pear/Crypt_GPG/zipball/7024573e03fddd1bf744e93da576efe35da15a32",
+                "reference": "7024573e03fddd1bf744e93da576efe35da15a32",
                 "shasum": ""
             },
             "require": {
-                "ext-mbstring": "*",
-                "pear/pear_exception": "*",
-                "php": ">=5.6"
+                "php": ">=8.1"
             },
             "require-dev": {
-                "phpstan/phpstan": "^1.2",
-                "phpunit/phpunit": "^9"
+                "ext-posix": "*",
+                "friendsofphp/php-cs-fixer": "^3.95",
+                "phpstan/phpstan": "^2.2",
+                "phpunit/phpunit": "^10"
             },
             "suggest": {
                 "ext-posix": "May require the posix PHP extension"
             },
-            "bin": [
-                "scripts/crypt-gpg-pinentry"
-            ],
             "type": "library",
             "autoload": {
-                "classmap": [
-                    "Crypt/"
-                ]
+                "psr-4": {
+                    "Crypt\\": "Crypt/"
+                }
             },
             "notification-url": "https://packagist.org/downloads/",
-            "include-path": [
-                "./"
-            ],
             "license": [
                 "LGPL-2.1"
             ],
@@ -1765,33 +1759,33 @@
                 "gpg"
             ],
             "support": {
-                "issues": "https://pear.php.net/bugs/search.php?cmd=display&package_name[]=Crypt_GPG",
+                "issues": "https://github.com/pear/Crypt_GPG/issues",
                 "source": "https://github.com/pear/Crypt_GPG"
             },
-            "time": "2026-05-07T16:55:52+00:00"
+            "time": "2026-08-03T13:33:28+00:00"
         },
         {
             "name": "pear/http_request2",
-            "version": "v2.7.0",
+            "version": "v2.8.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/pear/HTTP_Request2.git",
-                "reference": "b1c61b71128045734d757c4d3d436457ace80ea7"
+                "reference": "ccb06dd1e71aceb96f7cde7994976e02a46c7d5f"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/pear/HTTP_Request2/zipball/b1c61b71128045734d757c4d3d436457ace80ea7",
-                "reference": "b1c61b71128045734d757c4d3d436457ace80ea7",
+                "url": "https://api.github.com/repos/pear/HTTP_Request2/zipball/ccb06dd1e71aceb96f7cde7994976e02a46c7d5f",
+                "reference": "ccb06dd1e71aceb96f7cde7994976e02a46c7d5f",
                 "shasum": ""
             },
             "require": {
                 "pear/net_url2": "^2.2.0",
                 "pear/pear_exception": "^1.0.0",
-                "php": ">=5.6.0"
+                "php": ">=7.1"
             },
             "require-dev": {
                 "pear/log": "^1",
-                "yoast/phpunit-polyfills": "^1.0.0"
+                "yoast/phpunit-polyfills": "^4.0"
             },
             "suggest": {
                 "ext-curl": "Allows using cURL as a request backend.",
@@ -1828,7 +1822,7 @@
                 "issues": "https://github.com/pear/HTTP_Request2/issues",
                 "source": "https://github.com/pear/HTTP_Request2"
             },
-            "time": "2025-04-06T13:48:50+00:00"
+            "time": "2026-09-04T10:44:42+00:00"
         },
         {
             "name": "pear/mail_mime",
@@ -3492,16 +3486,16 @@
         },
         {
             "name": "symfony/polyfill-php85",
-            "version": "v1.41.0",
+            "version": "v1.43.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-php85.git",
-                "reference": "255fab485aaa1006ed411040c42aecd7b5302d7a"
+                "reference": "86a42cbcc07adc331481a5ab310a4024bfc227f6"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-php85/zipball/255fab485aaa1006ed411040c42aecd7b5302d7a",
-                "reference": "255fab485aaa1006ed411040c42aecd7b5302d7a",
+                "url": "https://api.github.com/repos/symfony/polyfill-php85/zipball/86a42cbcc07adc331481a5ab310a4024bfc227f6",
+                "reference": "86a42cbcc07adc331481a5ab310a4024bfc227f6",
                 "shasum": ""
             },
             "require": {
@@ -3548,7 +3542,7 @@
                 "shim"
             ],
             "support": {
-                "source": "https://github.com/symfony/polyfill-php85/tree/v1.41.0"
+                "source": "https://github.com/symfony/polyfill-php85/tree/v1.43.0"
             },
             "funding": [
                 {
@@ -3568,7 +3562,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-07-01T12:47:55+00:00"
+            "time": "2026-09-25T15:46:47+00:00"
         }
     ],
     "packages-dev": [],
