@@ -1,4 +1,4 @@
-# The fast tier on every push and pull request: tests/unit/run.sh (Python
+# The fast tier on every push to main and every pull request: tests/unit/run.sh (Python
 # unittest and pyflakes, the cloud-files plugin in the pinned Roundcube
 # image, resieve's cargo test in the pinned Rust image). The slower suites
 # (acceptance demo, deploy, first install, trial) need minutes to tens of
@@ -7,6 +7,7 @@ name: unit tests
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:

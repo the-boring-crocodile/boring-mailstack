@@ -10,7 +10,7 @@ and `bc`. No Rust or PHP toolchain on the host: images build their own.
 
 | Command | What it proves |
 |---|---|
-| `tests/unit/run.sh` | Python unittest (bridge, getmail tools, provenance, resieve-watch, accounts and config tools) and pyflakes, the cloud-files plugin (PHP, in the Roundcube image) and resieve (`cargo test` in a container); also on GitHub at every push (`.github/workflows/unit-tests.yml`) |
+| `tests/unit/run.sh` | Python unittest (bridge, getmail tools, provenance, resieve-watch, accounts and config tools) and pyflakes, the cloud-files plugin (PHP, in the Roundcube image) and resieve (`cargo test` in a container); also on GitHub at every push to main and every pull request (`.github/workflows/unit-tests.yml`) |
 | `tests/graceful_stop/run.sh` | bridge and provenance stop cleanly on SIGTERM, a webhook in flight is still recorded |
 | `tests/demo/run.sh` | **acceptance:** the whole demo from nothing back to nothing — first import with provenance, round trip through relay and provider, mail to oneself, webmail with Filters, Contacts, Calendar and cloud files, inbound paths (provider Junk through the filter, provider moves and labels, filter changes, the re-sort chute, "not spam"), a provider with labels like Gmail (label, spam, not spam, trash, restore; handed to the bridge directly), HTML mail in dark mode, a vacation reply from the real address, browser checks (`BROWSER=0` skips them), no Internet from the mail network |
 | `tests/first-install/run.sh` | DEPLOY.md's first installation, step by step (without sudo, on 127.0.0.1): artifact check, `tools/setup`, placeholder refused, deploy, webmail and login, uninstall |
