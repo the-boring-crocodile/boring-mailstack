@@ -92,9 +92,10 @@ welcome (CONTRIBUTING.md), security problems privately (SECURITY.md).
 
 ## Licence
 
-Copyright Wald and the boring-mailstack contributors. Much of the code was
-written by AI (OpenAI's models and Anthropic's Claude) and reviewed and
-tested by Wald; docs/STORY.md says who did what.
+Copyright Wald and the boring-mailstack contributors. All of it — code,
+tests, docs — was written by AI (OpenAI's models and Anthropic's Claude);
+Wald decided what to build, tested it, ran it and had the last word.
+docs/STORY.md says who did what.
 
 GNU Affero General Public License, version 3 or (at your option) any later
 version: `LICENSE`. Use it, change it, pass it on; whoever passes on a

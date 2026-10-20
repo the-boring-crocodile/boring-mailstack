@@ -456,7 +456,10 @@ for this convenience (Wald).
 later (`LICENSE`; README "Licence"). `resieve` binaries are AGPL-3.0 only
 (sieve-rs); our patches to Kolab and Roundav stay under their licences.
 Copyright line: "Wald and the boring-mailstack contributors", saying that
-much of the code was written by an AI and reviewed and tested by Wald.
+all of it — code, tests, docs — was written by AI, and that Wald decided
+what to build, tested it, ran it and had the last word. (First worded
+"much of the code ... reviewed and tested by Wald"; corrected because
+it understated the AI's part and implied a line-by-line review.)
 
 **Why:** Wald supports the open source idea and uses it daily; the stack
 is built from AGPL software (Stalwart, Kolab's calendar, Roundav,

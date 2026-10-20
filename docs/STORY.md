@@ -6,8 +6,8 @@ AI works, and the server they both run on grew side by side, and each one
 shaped the others. The mail stack came in phases, between work on the
 other two.
 
-I am Wald, the human here. Most of the code was written by AI: by an
-agent that works on my home server under the name "The Boring Crocodile"
+I am Wald, the human here. All of it — the code, the tests, the docs,
+this page — was written by AI: by an agent that works on my home server under the name "The Boring Crocodile"
 (`<^==>`), driven by OpenAI's models and Anthropic's Claude, depending on
 the session. What to build we worked out together; I tested it, ran it
 and had the last word. This document says who did what wherever it
