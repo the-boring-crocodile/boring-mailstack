@@ -300,7 +300,7 @@ class Deliver(unittest.TestCase):
 
     def test_mail_to_oneself_arrives_despite_the_sent_copy(self):
         # Sent from webmail to one's own address: Roundcube's Sent copy is
-        # identical, but the mail has not arrived yet (found in daily use, 2026-10-09).
+        # identical, but the mail has not arrived yet (found in daily use).
         sent = {"e1": {"mailboxIds": {"S": True}}}
         self.assertEqual(self.run_case("INBOX", sent, sent, roles={"S": "sent"}), ("smtp", [("smtp", False)]))
         drafts_and_sent = {"e1": {"mailboxIds": {"S": True, "D": True}}}
@@ -341,7 +341,7 @@ class Deliver(unittest.TestCase):
                                                "keywords/$junk": None})])
 
     def test_gmail_mark_as_spam_moves_even_with_labels(self):
-        # Found live 2026-10-09: marked as spam in Gmail, the INBOX copy
+        # Found live: marked as spam in Gmail, the INBOX copy
         # here got Junk added and stayed in INBOX. Spam is a place.
         inbox = {"e1": {"mailboxIds": {"I": True}}}
         self.assertEqual(self.run_case("[Gmail]/Spam", inbox, inbox, role="junk", target_role="junk",

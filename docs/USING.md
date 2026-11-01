@@ -1,115 +1,132 @@
 # Using boring-mailstack
 
-What happens to your mail, and what you can do with it. For the people who
-read mail here; the operator's side is in DEPLOY.md, the settings per
-mailbox in `accounts.example.yaml`.
+This is the behaviour reference for people reading mail in Roundcube.
+For a guided introduction, see [Working with mailstack](WORKING_WITH_MAILSTACK.md).
+Installation and account configuration belong to the operator:
+[DEPLOY.md](../DEPLOY.md).
 
-## Logging in
+## Sign-in and accounts
 
-Open the webmail address your operator gave you and log in with your **full
-email address** and the password of your mailbox at your provider. When you
-change that password at the provider, tell your operator: the mailstack
-needs it too (it is the same password here, set again at every start).
+Use your full mail address and its inbound provider password at the webmail
+URL your operator supplies. If that password changes at the provider, tell
+the operator: retrieval and local account configuration need the new value.
 
-Your mail stays at your provider: boring-mailstack fetches a copy and never
-deletes anything there. Sending goes through your provider as well, so your
-mail looks exactly as if you had sent it from there.
+Sending uses that address's configured provider. The local installation does
+not replace the provider's internet mail service.
 
-## Where arriving mail goes
+## Keeping mail
 
-- **Your provider's Inbox goes through your filter.** Filters are under
-  Settings → Filters. A mail no rule matches lands in your Inbox.
-- **What you sorted at your provider stays sorted.** Mail in any other folder
-  at your provider arrives in the folder of the same name here, and your
-  filter never touches it.
-- **Spam stays spam unless your filter says otherwise.** If your operator
-  lets your filter see your provider's Junk folder, a rule can rescue a mail
-  from it; everything else lands in Junk, marked as junk.
-- **A new mailbox brings its whole history**, folder by folder, the first
-  time. Large mailboxes take a while.
-- **Mail you send to yourself arrives** in your Inbox, and your Sent copy
-  stays in Sent.
+Updated provisioning gives stored mail no automatic age limit,
+including Junk and Trash. Older releases need the
+[retention mitigation](../DEPLOY.md#mail-retention).
 
-## Things your provider does
+Emptying a folder or permanently deleting messages in a client still removes
+mail. User-authored discard rules can discard incoming messages. Provider
+retention is independent, and imported history may exist only locally.
+Keep backups.
 
-- **Moving a mail at your provider moves it here** (once fetched again), and
-  from then on it counts as sorted by you.
-- **Gmail labels:** a mail with two labels is one mail in two folders here,
-  not two copies.
-- **Spam and trash at your provider are places, not labels:** marking a mail
-  as spam (or deleting it) at Gmail moves it here into Junk (or Trash), out
-  of every other folder; "not spam" or restoring it there brings it back.
-- **Gmail's "All Mail" is not fetched** (it would only duplicate every other
-  folder).
-- **Your provider's copy of what you sent** (many providers keep one) does
-  not appear a second time next to the webmail's Sent copy.
-- **Only what arrives somewhere is seen.** A mail that leaves a folder at your
-  provider *without* landing in another one stays where it is here: deleted
-  for good at the provider, or **archived in Gmail** (Gmail's archive only
-  removes the Inbox label; the mail is then in "All Mail" alone, which is not
-  fetched). Archive and sort in this webmail, and it is always right; in
-  Gmail's own app or web page, archive leaves the mail in this Inbox.
+## Arriving mail
 
-Nothing is fetched twice by a restart or an update. After a crash or a
-power cut a mail may, rarely, arrive twice; none is ever lost.
+| Source | Local behaviour |
+|---|---|
+| Provider Inbox | Uses configured filtering; no matching filing rule means Inbox |
+| Another provider folder | Arrives in the corresponding folder and is recorded as already filed |
+| Provider Junk | Remains junk; configured filtering may rescue it into another folder |
+| Mail you send to yourself | Arrives through the provider; the Sent copy remains separate |
 
-## When you change your filter
+The operator controls which delivery folders use the filter. A new account's
+first fetch brings the history from its fetched folders; this can take time.
 
-About a minute after you save a filter, mail it placed earlier is sorted
-again by the new rules ("resieve"). It never moves:
+A restart or update does not normally fetch already-recorded mail again.
+A crash around delivery can still produce a duplicate. Fetch state is not a
+substitute for backups.
 
-- mail **you** placed: moved or copied by hand here, or sorted at your
-  provider before it was fetched;
-- mail in **Sent, Drafts, Trash and Junk** (your operator can let your
-  filter pull mail out of Junk; a mail it files elsewhere then loses its
-  junk mark).
+## Provider changes
 
-Your filter's actions run only for new mail: re-sorting old mail moves it,
-but sends no vacation reply, no redirect and no copy anywhere.
+Moves encountered at the provider's destination folder are reflected locally
+and count as deliberate placements. Provider Sent copies are recognised so
+they do not appear a second time beside the local Sent copy.
 
-If the re-sorting cannot be finished (a very busy mailbox), a notice arrives
-in your Inbox; saving the filter again tries again.
+For Gmail, several labels can give one message several local folder
+memberships. Spam and Trash are treated as placements, not ordinary extra
+labels. A spam/trash action there moves mail locally to that destination;
+a later “not spam” or restore there can bring it back.
 
-**Re-sort single mails, or reorganise your folders:** move mail into your
-Inbox. It forgets that you placed it, and after about a minute your filter
-sorts it; if no rule matches, it stays in the Inbox. So: create the new
-folders, write the rules, move the old folder's mail into the Inbox, done.
-Read and unread stay as they were.
+Gmail's All Mail view is not fetched. Removing its Inbox label without adding
+a fetched destination — archiving only in Gmail — can leave the mail in the
+local Inbox. A message disappearing entirely at a provider does not
+by itself request local deletion.
 
-![The life of a mail: your filter files two newsletters, A and B, into News. You move B to Keep: from now on the filter leaves it alone. You change the filter to file newsletters into Reading: A moves there, B stays in Keep. You move B to the Inbox: the filter takes it back and files it into Reading.](architecture/life-of-a-mail.svg)
+Local filing is not a general two-way sync to the provider.
+[What travels where](WORKING_WITH_MAILSTACK.md#what-travels-where) gives the overview.
 
-**"Not spam":** moving a mail from Junk to your Inbox keeps it there (unless
-a rule files it elsewhere), whatever the spam check said.
+## Filing and filter changes
+
+About a minute after a filter is saved, resieve re-evaluates eligible existing
+mail. It respects recorded human placements and skips Sent, Drafts, Trash
+and Junk by default. An operator can allow the filter to pull mail out of Junk;
+mail filed elsewhere then loses its junk mark.
+
+| What you do | What it means for later filtering |
+|---|---|
+| Move or copy mail into an ordinary folder in Roundcube or IMAP | Record your placement and protect it |
+| Move mail back into Inbox | Hand it back to the filter; no matching rule leaves it in Inbox |
+| Move mail into Junk | May hand it back, according to the account's Junk re-sorting policy |
+| Change a filing rule | Re-sort eligible existing mail, preserving read/unread flags |
+
+Re-sorting old mail does not send vacation replies, redirects or new copies.
+If automatic re-sorting repeatedly fails, a notice is placed in Inbox;
+saving the filter again retries it.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="architecture/life-of-a-mail-dark.svg">
+  <img alt="A filter files mail; a manual move protects one message; a changed rule leaves that placement alone; moving it into Inbox hands it back." src="architecture/life-of-a-mail.svg">
+</picture>
+
+**Client limits:** moves by JMAP clients are not noticed as human placements.
+An IMAP APPEND without a Message-ID cannot be recorded through the same
+mechanism; Roundcube supplies one. These limits matter when choosing another
+client or import tool.
+
+Moving a message out of Junk into Inbox removes the Junk placement; a matching
+filing rule may still put it elsewhere.
+
+## Replies, redirects and historical imports
+
+Vacation replies go only to mail naming your address in To or Cc. They do not
+answer group addresses, mailing lists, bulk mail or automatic messages, and
+answer each sender once per configured interval. They can answer spam addressed
+directly to you: this rule does not consult the spam verdict.
+
+**Before an initial import or re-import:** disable vacation replies and
+redirects that should not run for historical mail. Delivery filtering can
+execute them even though the message is old. Re-enable them after checking
+the import.
+
+A reject rule discards silently here. The provider already accepted the
+message, so no rejection bounce goes back to the original sender. Use discard
+or a Trash-folder filing rule to express the intended outcome.
+
+## Contacts, calendar and files
+
+Add your own Nextcloud under Settings → CardDAV, preferably with an app
+password. Contacts, calendar and cloud-file integration use that connection.
+Only Nextcloud is tested for the combined integration.
+
+Files and Talk open Nextcloud in a new tab with its own browser login.
+The webmail's server connection cannot sign your browser in. Signing into
+Nextcloud there with “Stay logged in” avoids repeating that step while its
+session remains valid.
 
 ## Dark mode
 
-In dark mode the webmail shows HTML mail dark too: mail that sets no colours
-of its own (most personal mail) gets a dark background and light text;
-designed mail (newsletters, receipts) stays white, as its colours would not
-work on dark. Settings > Preferences > Displaying Messages > "HTML mail in
-dark mode" also offers inverting every HTML mail, or always white.
+Personal HTML mail without its own colours gets a dark background and light
+text. Designed mail such as newsletters keeps its own colours, usually on
+white, so its layout stays readable.
 
-## Good to know
+Settings → Preferences → Displaying Messages → “HTML mail in dark mode”
+also offers inversion of every HTML message, or an always-white display.
 
-- **Vacation replies answer spam too:** the vacation rule does not skip mail
-  the spam check marked (mailing lists, bulk mail and automatic messages are
-  skipped).
-- **Filters and old mail:** when mail is imported into a mailbox that
-  already has a filter with a vacation reply or a redirect, those run for
-  the imported mail as well. Switch them off before a mailbox is imported
-  or re-imported, and on again afterwards.
-- **A "reject" rule discards silently:** the sender gets no bounce, because
-  the mail was accepted by your provider long before it reached your
-  filter. Use "discard" or a Trash folder to say what you mean.
-- **Contacts, Calendar and cloud files** appear once you add your own
-  Nextcloud under Settings → CardDAV (ideally with a Nextcloud app
-  password).
-- The **Files** and **Talk** links open your Nextcloud in a new tab with
-  its own login: the webmail's connection to Nextcloud cannot log your
-  browser in. Tick "Stay logged in" there once, and the links open
-  straight into Nextcloud while you keep using it.
-- Moves made with a **JMAP** mail client are not noticed as "placed by you"
-  (IMAP clients and the webmail are). Neither is a mail an IMAP client
-  stores without a Message-ID (the webmail always sets one).
-- Your provider's Inbox mail does not go through this server's own spam
-  check (your provider checked it already).
+For a practical walkthrough, return to [Working with mailstack](WORKING_WITH_MAILSTACK.md).
+If fetching or sending stops, contact the operator before resetting an account
+or repeating an import.

@@ -2,7 +2,19 @@
 
 The whole stack, running against a simulated mail provider, with four
 mailboxes full of three months of office life. Try it without handing
-anyone a real password.
+anyone a real password. This is a disposable demo, separate from a real
+installation; for provider accounts, follow [Deployment](../DEPLOY.md).
+
+First get the source on the machine that will run Docker (requires Git):
+
+```bash
+git clone https://github.com/the-boring-crocodile/boring-mailstack.git
+cd boring-mailstack
+```
+
+If you already have a checkout, open its top-level directory instead.
+The following commands run from that directory. Run them individually;
+`reset` starts over and `down --yes` removes the demo data.
 
 ```bash
 tools/demo up          # first run builds images; prints the URL and logins
@@ -107,7 +119,8 @@ looks recent. The provider (GreenMail) keeps its mail in memory: after
 - **inbound paths** (`inbound.py`): provider Junk through the filter,
   provider moves and labels, filter changes, the re-sort chute, "not spam";
 - **mail Stalwart writes itself** (`vacation.py`): a vacation reply leaves
-  from the real address.
+  from the real address; mail to a group address and mail from a mailing
+  list get none.
 
 It uses its own Compose project, so a demo someone is reading is not
 touched. Run it before every release.

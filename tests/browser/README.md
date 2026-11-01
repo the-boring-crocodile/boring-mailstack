@@ -12,7 +12,7 @@ docker run --rm --network <demo project>_webmail \
 
 `ics_invitation.py`: Kolab's invitation box (Accept, Maybe, Decline, ...)
 with Roundav active; the .ics attachment menu lists both "Save to cloud" and
-"Save to calendar". Observed 2026-10-07: passes, identical with Roundav
+"Save to calendar". Observed: passes, identical with Roundav
 switched off except for the "Save to cloud" entry (Roundav issue #6 does not
 reproduce with Roundav 3.0.1, Kolab df6f30f, Roundcube 1.7.4).
 

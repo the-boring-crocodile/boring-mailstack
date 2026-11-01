@@ -2,7 +2,7 @@ use std::{thread, time::Duration};
 
 // Stalwart limits requests per authenticated account and answers HTTP 429
 // above it. A full run over a large mailbox reached Stalwart's default of
-// 60,000 per minute (one download per mail; observed 2026-10-07 on a
+// 60,000 per minute (one download per mail; observed on a
 // 49k-mail fixture); stalwart-provision now sets 600,000. resieve still
 // waits and tries again instead of counting a refused request as an error.
 pub const RETRIES: u32 = 12;

@@ -65,7 +65,7 @@ def search_subject(c, mailbox, marker):
 def to_oneself():
     """Mail to one's own address, sent as Roundcube does: submitted over SMTP
     and the same bytes appended to Sent. The arriving copy is identical to
-    the Sent copy and must still land in the Inbox (found in daily use, 2026-10-09)."""
+    the Sent copy and must still land in the Inbox (found in daily use)."""
     marker = f"To myself {uuid.uuid4().hex[:10]}"
     msg = EmailMessage()
     msg["From"] = "Croc <croc@pond.test>"

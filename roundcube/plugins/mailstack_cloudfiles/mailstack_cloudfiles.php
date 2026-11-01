@@ -82,7 +82,7 @@ class mailstack_cloudfiles extends rcube_plugin
         } elseif ($args['name'] === 'driver_webdav_keep_session') {
             // Roundav (3.2.0+) keeps Nextcloud's session cookies in the
             // Roundcube session: a login without a session costs ~0.5 s at
-            // Nextcloud, a request in one ~0.1 s (measured 2026-10-07); a
+            // Nextcloud, a request in one ~0.1 s (measured); a
             // folder tree of n folders takes n+1 requests. Roundav keeps its
             // own cookies, so it logs in once beside the shared jar below.
             if (!empty($this->values()['driver_webdav_url'])) {
@@ -133,7 +133,7 @@ class mailstack_cloudfiles extends rcube_plugin
             // Reuse Nextcloud's session across requests, as Nextcloud
             // recommends for DAV clients: a fresh Basic-auth login costs
             // ~450 ms (password hashing first, then the app password), a
-            // request in an existing session ~70 ms (measured 2026-10-06).
+            // request in an existing session ~70 ms (measured).
             // The jar lives in this Roundcube session and ends with it.
             $request->setCookieJar(self::jar($v['driver_webdav_url'], $v['driver_webdav_username']));
         } else {

@@ -38,7 +38,7 @@ pub struct Membership {
 /// Blob downloads and the JMAP calls jmap-client 0.4.2 cannot make, over
 /// one long-lived HTTP client: jmap-client builds a new HTTP client (new
 /// connection, TLS handshake, runtime thread) for every download; with one
-/// download per mail that dominated a run (measured 2026-10-07 on a 49k-mail
+/// download per mail that dominated a run (measured on a 49k-mail
 /// fixture). Same URL, credentials and certificate policy as the JMAP client
 /// (Stalwart on the private Docker network; DECISIONS.md, TLS inside the
 /// stack). Every request waits and tries again while Stalwart answers 429.

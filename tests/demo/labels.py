@@ -8,7 +8,7 @@ Stalwart.
 1. New mail in INBOX: through the filter into INBOX.
 2. The same mail under a label: one mail in INBOX and the label's folder.
 3. Marked as spam at the provider: it leaves INBOX and the label, only in
-   Junk, flagged junk (found live 2026-10-09: it stayed in INBOX too).
+   Junk, flagged junk (found live: it stayed in INBOX too).
 4. "Not spam" at the provider: back in INBOX only, flagged not junk.
 5. Deleted at the provider: only in Trash. 6. Restored: only in INBOX.
 """

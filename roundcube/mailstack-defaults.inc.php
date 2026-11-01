@@ -45,7 +45,7 @@ if (!isset($config['managesieve_conn_options']) && isset($config['imap_conn_opti
 // Webmail's special folders are Stalwart's own (by its names): Roundcube's
 // defaults ('Sent', 'Junk', 'Trash') would make an ordinary folder of that
 // name, e.g. one imported from a provider or an old client, look like the
-// special one (seen 2026-10-11: an ordinary "Junk" next to "Junk Mail").
+// special one (seen: an ordinary "Junk" next to "Junk Mail").
 foreach (['drafts_mbox' => 'Drafts', 'sent_mbox' => 'Sent Items',
           'junk_mbox' => 'Junk Mail', 'trash_mbox' => 'Deleted Items'] as $key => $name) {
     if (!isset($config[$key])) {
@@ -57,14 +57,14 @@ unset($key, $name);
 // Kolab calendar (CalDAV): keep appointments up to 64 KB in full in the
 // local cache. Kolab's default 0 (undocumented) fetches every displayed
 // appointment from the server one by one: 30-45 s per view with a real
-// Nextcloud calendar instead of ~2 s (measured 2026-10-06).
+// Nextcloud calendar instead of ~2 s (measured).
 if (!isset($config['dav_cache_threshold'])) {
     $config['dav_cache_threshold'] = '64K';
 }
 
 // Kolab calendar (CalDAV): keep each calendar's rights and sharing for
 // dav_cache_ttl instead of asking Nextcloud on every request (~0.3 s -> ~0.1 s
-// per view, 2026-10-06). Opt-in upstream (our patch 5-kolab-folderinfo-cache).
+// per view). Opt-in upstream (our patch 5-kolab-folderinfo-cache).
 if (!isset($config['dav_cache_folder_info'])) {
     $config['dav_cache_folder_info'] = true;
 }

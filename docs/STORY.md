@@ -6,12 +6,12 @@ AI works, and the server they both run on grew side by side, and each one
 shaped the others. The mail stack came in phases, between work on the
 other two.
 
-I am Wald, the human here. Most of the code was written by AI: by an
-agent that works on my home server under the name "The Boring Crocodile"
-(`<^==>`), driven by OpenAI's models and Anthropic's Claude, depending on
-the session. What to build we worked out together; I tested it, ran it
-and had the last word. This document says who did what wherever it
-matters.
+I am Wald, the human here. All of it — the code, the tests, the docs,
+this page — was written by AI: by an agent that works on my home server
+under the name "The Boring Crocodile" (`<^==>`), driven by OpenAI's
+models and Anthropic's Claude, depending on the session. What to build
+we worked out together; I tested it, ran it and had the last word. This
+document says who did what wherever it matters.
 
 It started with my own mail. For about twenty years I have used a
 catch-all address on a domain of my own: every website that wants an email
@@ -38,10 +38,10 @@ Two ideas from that time carried through to today:
 - **Provenance.** Its design already recorded where a human had put a
   mail, so filters could be re-applied later without undoing anyone's own
   filing.
-- **Boring on purpose.** Its design document said: *"prefer the design
-  that will be boring to understand at 02:00 five years from now."* The
-  crocodile `<^==>`, born as a subject prefix for a mailing list a week
-  earlier, became the shorthand for that.
+- **Boring on purpose.** The aim: *prefer the design that will be boring
+  to understand at 02:00 five months from now.* The crocodile `<^==>`,
+  born as a subject prefix for a mailing list a week earlier, became the
+  shorthand for that.
 
 It worked, but it was a working installation, not something anyone else
 could install: no releases, no upgrade path, configuration and code mixed
@@ -50,23 +50,17 @@ context, which is gone after every session.
 
 ## A home for the work
 
-That last point is the reason for everything else. An AI agent forgets.
-So in parallel we built a place where it does not have to remember: a
-server for the Model Context Protocol (MCP) that gives AI sessions an
-authenticated, constrained way to work on my server, with a shared
-handbook, a working contract and a project map they read at the start of
-every session. That is its own project.
+That became [Pond](https://github.com/the-boring-crocodile/boring-pond):
+the working environment we built for the Boring Crocodile and its fellow
+AI assistants. Pond gives them tools to work on the server and a shared
+handbook, project map and written decisions, so a new session can pick up
+where the previous one stopped.
 
-Then the mail stack moved into that place: its source and
-original documents imported and checksummed, the credentials and mail
-left where they were. From then on it was developed in a repository by
-an agent that, every morning, read what the previous session had
-written down.
-
-The same weeks were spent cleaning up the server itself: old directories,
-backups, a proxy replaced, services put under proper ownership. Much of
-what later became the mail stack's release discipline was tried there
-first.
+The mail stack became one of Pond's projects. We imported its source and
+documents into a repository, leaving live mail and credentials in place.
+Alongside it, we used Pond to clean up the server's backups, proxy and
+service ownership. The release and recovery practices tried there became
+part of how we build and deploy the mail stack.
 
 ## From an installation to a product
 
@@ -103,11 +97,17 @@ every rough edge was now my own daily mail:
   an issue with tested branches to Roundav (taken into its release 3.2.0
   the next day), six findings for Kolab's calendar plugins.
 - **Filters that follow you.** `resieve` re-applies a changed filter to
-  old mail and now runs by itself a minute after a filter change. On a
-  real mailbox of 48,987 mails a dry run went from 222 seconds to 7.
+  old mail and runs automatically about a minute after a filter change.
+  Making that practical meant removing unnecessary work: fetch message
+  details in batches, reuse one connection for downloads, and skip bodies
+  and attachments when the filter only needs headers such as sender and
+  subject. On a test copy of a real mailbox with 48,987 messages, those
+  changes took a dry run from 222 seconds to 7, with the same filing
+  results. Filters needing whole messages took about 38 seconds.
 
 Many small releases, each one deployed by me, checked live, and only then
-called final: a step back was always one command away.
+called final. Reversible releases had a one-command way back; later upgrades
+that changed the data required a pre-upgrade backup instead.
 
 ## Rethinking the way in
 
@@ -126,9 +126,10 @@ dates. Two of my decisions from that phase shape the product:
 
 - **Mirror reality.** The stack shows the provider's mailbox as it is, odd
   folders included. It leans on the structure your provider already has
-  instead of inventing a layer of its own: what you see here is what is
-  there, so on a day you need the provider's own webmail (an outage, a
-  trip), it looks just as familiar.
+  instead of inventing a new folder scheme. This makes the starting point
+  familiar when switching between local and provider webmail. It is not
+  two-way synchronisation: local rules and deliberate filing can make the
+  two copies differ.
 - **No spam filter of our own.** The question was whether to run
   Stalwart's filter a second time over mail the provider had already
   filtered. Instead of arguing, we measured with real mail: even with the
@@ -191,19 +192,25 @@ other service here, no single sign-on into Nextcloud ("way too heavy for
 a little convenience"). Others we reached by measuring first, like the
 spam filter. Either way the decision and its reason go into DECISIONS.md.
 
-**Looking back.** What surprised me most is how well it all worked. And
-the mail stack was not the only result: it produced our working contract,
-written by the agent from how we actually worked together, and it set off
-the home for the work described above. I did not expect to find an
-effective way of working with one of the biggest technical steps of recent
-years this quickly, and I still don't quite know how to rate it. It is
-productive, and it is fun: I feel like MacGyver in an Iron Man suit. How
-much more is in it, I can't tell yet. One thing I would do earlier next
-time: take the reins sooner. In the first days of working this way I held
-them too loosely, and it got better once I took more of the decisions
+**Looking back.** What surprised me most was how much we could build
+together. The mail stack also helped shape Pond and our working
+agreement: the agent wrote down the practices we had developed along the
+way, so we could carry them into the next project.
+
+I hadn't expected to find a productive way of working with AI so quickly.
+I'm still figuring out what to make of it, but I enjoy it. It feels a bit
+like being MacGyver in an Iron Man suit: I bring the ideas and the
+willingness to tinker, with far more capability at my disposal than before.
+
+If I started again, I would take a firmer hand earlier. At first I left
+too many decisions to the agent. The work improved when I became clearer
+about what I wanted, questioned its choices and made the important calls
 myself. That, I suppose, is how you learn it.
 
 ## In numbers
+
+These figures describe the initial development period, not the current
+release.
 
 - About 390 commits, September and October 2026. The public repository
   starts with one: the history holds details of my own server and stays

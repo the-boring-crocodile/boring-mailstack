@@ -7,8 +7,8 @@
 #   cloudfiles  php in the pinned Roundcube base image, no network
 #   resieve  cargo test in resieve/Dockerfile's pinned Rust image, two build jobs and a pids limit
 #            (a rootless daemon under a per-user pids limit can fall over
-#            when a parallel Rust build spawns too many threads; observed
-#            2026-10-07). Cargo's registry and target dir live in named
+#            when a parallel Rust build spawns too many threads, as once
+#            observed). Cargo's registry and target dir live in named
 #            volumes (resieve-test-cargo, resieve-test-target).
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)

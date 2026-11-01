@@ -19,6 +19,7 @@ in the home). Remove passwords and addresses you do not want public.
 - Contributions come in under the project's licence, the GNU AGPL 3.0 or
   later (LICENSE).
 
-**AI:** much of this project was written by an AI and reviewed and tested
-by a human. AI-assisted contributions are welcome on the same terms: say
-so, and the person sending the change has tested it and stands behind it.
+**AI:** all of this project — code, tests, docs — was written by AI; a
+person decided what to build, tested it and ran it. AI-assisted
+contributions are welcome on the same terms: say so, and the person sending
+the change has tested it and stands behind it.

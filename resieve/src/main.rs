@@ -596,7 +596,7 @@ fn main() {
         let mut moves: Vec<Move> = Vec::new();
 
         // Downloads stay sequential: in parallel (4 or 8 at a time) a run
-        // was several times slower against Stalwart (measured 2026-10-07).
+        // was several times slower against Stalwart (measured).
         {
             for email_id in chunk {
                 stats.evaluated += 1;

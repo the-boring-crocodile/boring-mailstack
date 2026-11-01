@@ -7,7 +7,8 @@ Writes DIR/boring-mailstack-<tag>.tar.gz (default DIR: ./dist), containing
 boring-mailstack-<tag>/ with the files of exactly that tag (git archive)
 except pond/ (the operator's own record, never released), VERSION, and
 MANIFEST.sha256 listing every file. No .git: production gets
-the files of one release, not the repository (DECISIONS.md 2026-10-06).
+the files of one release, not the repository (DECISIONS.md, "Releases
+are checked by their manifest; built from a clone").
 
 Install it on a host with the release's own tools/deploy (see DEPLOY.md).
 """
