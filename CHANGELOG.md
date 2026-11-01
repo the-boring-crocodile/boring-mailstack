@@ -5,6 +5,28 @@ first. Versions are `vYYYY.M.N`: year, month, and the release count in that
 month. Every upgrade is `tools/deploy` of the new release (DEPLOY.md); a
 rollback is a redeploy of `release.previous/`.
 
+## v2026.11.2
+
+Dependency updates (Dependabot's proposals, each checked by the acceptance
+test). Stalwart, and with it the stored mail, is unchanged.
+
+- **Base images:** the bridge, getmail and init on Python 3.15;
+  stalwart-cli 1.0.14 in init; Alpine 3.24 and Node 26 rebuilt; the
+  Roundcube build stage on alpine/git 2.54. The browser-check image moves
+  to Playwright 1.64, pinned with its tag, and its Playwright package with
+  it.
+- **Roundcube's PHP packages:** masterminds/html5 2.12, lolli42/finediff
+  1.1, league/commonmark 2.10.4.
+- **resieve's Rust crates:** rustls 0.23.46 (security fixes), serde_json
+  1.0.154, rusqlite 0.41.1.
+- **Demo:** GreenMail 2.1.15.
+- **Stays on Stalwart 0.16.23.** Stalwart 1.0 has a new database layout
+  and cannot open a 0.16 data store; the move needs Stalwart's own
+  migration tool from 0.16.27 and gets a release of its own. Dependabot no
+  longer proposes the Stalwart server image (DECISIONS.md).
+- Nothing to do when upgrading; the data is untouched and a rollback to
+  v2026.11.1 works as usual.
+
 ## v2026.11.1
 
 - **Stored mail must not expire:** provisioning explicitly sets Stalwart's

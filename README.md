@@ -91,7 +91,9 @@ tools/demo up
 
 It prints the URL and four logins. The demo runs the actual stack against
 a simulated provider: four colleagues at Pond Ltd, one season of office
-life, told through their mail. It cannot reach real mail providers.
+life, told through their mail. Its mail is fetched and sent only through the
+simulated provider: it cannot reach a real one
+([safety](demo/README.md#what-the-demo-does)).
 Rootless Docker works.
 
 When you are done:

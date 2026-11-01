@@ -11,7 +11,7 @@ ARG ROUNDCUBE_IMAGE=roundcube/roundcubemail:1.7.4-apache@sha256:1162705d5fa6514e
 # Roundcube login; DAV cache options documented; optional folder-info cache
 # (dav_cache_folder_info); optional copies of iTip messages in Sent
 # (calendar_itip_save_sent). local-*: ours only (German label for 6).
-FROM alpine/git:v2.52.0@sha256:4a0e72d49596a1f5d3701aeedafdadc5c0da4062be4657c7bdc4017387f591cc AS kolab
+FROM alpine/git:v2.54.0@sha256:e8ceedc73bd80992ae8d58a7d24c58b8322146c354f1d2e81a97db4452068ec0 AS kolab
 COPY patches/kolab/ /patches/
 RUN git clone -q --filter=blob:none https://git.kolab.org/source/roundcubemail-plugins-kolab.git /k \
  && git -C /k checkout -q df6f30f6515f8246defccabf2d4f66412df860da \
@@ -22,7 +22,7 @@ FROM ${ROUNDCUBE_IMAGE} AS roundcube-base
 # Kolab ships its Elastic styles as LESS only. Compile libkolab.css (which
 # holds the calendar's styles too) against this Roundcube's own Elastic
 # sources, as Kolab's README describes (lessc --relative-urls).
-FROM node:26-alpine@sha256:143494b1da2945f061539253adc65e4f1569ddf07da2d384c022c791a9d90a4a AS kolab-css
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS kolab-css
 COPY --from=kolab /k/plugins/libkolab /build/plugins/libkolab
 COPY --from=roundcube-base /usr/src/roundcubemail/skins/elastic /build/skins/elastic
 RUN npm install -g --silent less@4.2.2 \

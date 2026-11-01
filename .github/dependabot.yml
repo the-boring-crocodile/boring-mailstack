@@ -21,6 +21,10 @@ updates:
     directories: ["/", "/demo"]
     schedule: { interval: monthly }
     groups: { compose-images: { patterns: ["*"] } }
+    # Stalwart's server moves only in a release made for it: 1.0 cannot open
+    # a 0.16 data store (DECISIONS.md, "Stalwart's server image is updated by hand").
+    ignore:
+      - dependency-name: "stalwartlabs/stalwart"
   - package-ecosystem: composer
     directory: /roundcube
     schedule: { interval: monthly }

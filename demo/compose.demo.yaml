@@ -30,7 +30,7 @@
 services:
   demo-provider:
     # GreenMail standalone, pinned by digest.
-    image: greenmail/standalone@sha256:1ef95a966418cd09b7ea91d504d8c0826bbe7a2f6e679a75c601a831587c1626
+    image: greenmail/standalone@sha256:309ba544ea482e5d4265d09921cdab07c8dad2cc4481d715c9b8ff5d3f0a149f
     environment:
       GREENMAIL_OPTS: >-
         -Dgreenmail.setup.test.imaps
