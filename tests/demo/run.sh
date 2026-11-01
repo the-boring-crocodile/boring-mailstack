@@ -14,7 +14,8 @@
 #   3b. inbound.py: provider Junk through the filter, provider moves and
 #      labels, filter changes, the re-sort chute, "not spam"
 #   3b2. labels.py: a provider with labels like Gmail
-#   3c. vacation.py: a vacation reply from the real address
+#   3c. vacation.py: a vacation reply from the real address; none to a group
+#       address or a mailing list
 #   4. browser checks (tests/browser; BROWSER=0 skips them): Kolab's
 #      invitation box with Roundav; accepting a fresh invitation with a
 #      login that differs from the Nextcloud user, reply copied to Sent;

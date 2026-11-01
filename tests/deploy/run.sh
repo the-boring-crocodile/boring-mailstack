@@ -30,6 +30,9 @@
 #      `docker compose up -d` starts it again and init applies accounts.yaml
 #   O  compose overrides: a broken HOME/compose.override.yaml and an old
 #      etc/compose.override.yaml are refused before anything changes
+#   P  deploy --check: a good home passes and nothing changes; a home with
+#      two problems gets both at once and nothing changes. A stopped stack
+#      stays stopped through a deploy (recorded so); --start starts it
 #   N  a home of v2026.10.14-rc.8 (accounts.yaml and folders.yaml in etc/):
 #      the upgrade moves them up (links in etc/), writes compose.yaml and
 #      .env; rc.8 again with the printed rollback command; forward again
@@ -95,8 +98,11 @@ chmod 0700 "$H/etc/deploy-backup"
 version() { cat "$H/$1/VERSION" 2>/dev/null || echo none; }
 
 echo "== A: first install vtest.1"
-if "$R1/tools/deploy" "$H" 2>&1 | quiet; [ "${PIPESTATUS[0]}" = 0 ] && [ "$(version release)" = vtest.1 ]; then
-    ok "first install"; else bad "first install"; fi
+out=$("$R1/tools/deploy" "$H" 2>&1); rc=$?
+echo "$out" | quiet
+if [ "$rc" = 0 ] && [ "$(version release)" = vtest.1 ]; then ok "first install"; else bad "first install"; fi
+echo "$out" | grep -q "stored mail does not expire" && ok "smoke: stored mail does not expire" \
+    || bad "smoke did not check the retention"
 
 echo "== B: upgrade to vtest.2 (database made root:root 0646 and an older plugin list first, as older installations had)"
 echo "\$config['plugins'] = ['managesieve', 'archive', 'zipdownload'];" >> "$H/etc/roundcube/config.inc.php"
@@ -232,6 +238,29 @@ if echo "$out" | grep -q "FAILED at step 3 check" && echo "$out" | grep -q "Comp
     ok "etc/compose.override.yaml refused with the move hint"; else bad "old override place"; echo "$out" | tail -4; fi
 rm "$H/etc/compose.override.yaml"
 
+echo "== P: deploy --check, and a stopped stack stays stopped"
+ids() { docker ps -q --filter "label=com.docker.compose.project=$MAILSTACK_PROJECT" | sort | tr '\n' ' '; }
+before=$(ids); lines=$(wc -l < "$H/DEPLOYED")
+out=$("$R2/tools/deploy" --check "$H" 2>&1); rc=$?
+if [ "$rc" = 0 ] && echo "$out" | grep -q "^checked:" && [ "$(ids)" = "$before" ] \
+   && [ "$(version release)" = vtest.2 ] && [ "$(wc -l < "$H/DEPLOYED")" = "$lines" ]; then
+    ok "--check on a good home passes; nothing changed"; else bad "--check good home"; echo "$out" | tail -5; fi
+chmod o+r "$H/accounts.yaml"
+printf 'services:\n  mail-bridge:\n    environment: [broken\n' > "$H/compose.override.yaml"
+out=$("$R2/tools/deploy" --check "$H" 2>&1); rc=$?
+if [ "$rc" = 1 ] && echo "$out" | grep -q "must be private" && echo "$out" | grep -q "does not render" \
+   && echo "$out" | grep -q "2 things to fix first; nothing was changed" && [ "$(ids)" = "$before" ]; then
+    ok "--check lists both problems at once; nothing changed"; else bad "--check two problems"; echo "$out" | tail -6; fi
+chmod o-r "$H/accounts.yaml"; rm "$H/compose.override.yaml"
+(cd "$H" && env -u MAILSTACK_PROJECT docker compose down 2>&1 | quiet)
+out=$("$R2/tools/deploy" "$H" 2>&1); rc=$?
+if [ "$rc" = 0 ] && echo "$out" | grep -q "stays stopped" && [ -z "$(ids)" ] \
+   && tail -1 "$H/DEPLOYED" | grep -q "left stopped"; then
+    ok "a stopped stack stays stopped through a deploy (recorded)"; else bad "stopped stack"; echo "$out" | tail -5; fi
+out=$("$R2/tools/deploy" --start "$H" 2>&1); rc=$?
+if [ "$rc" = 0 ] && [ -n "$(ids)" ] && echo "$out" | grep -q "stored mail does not expire"; then
+    ok "--start starts it; smoke passes"; else bad "--start"; echo "$out" | tail -5; fi
+
 running() { docker ps --filter "label=com.docker.compose.project=$1" --format '{{.Names}}' | grep -vc -- -init- ; }
 init_exit() { docker inspect -f '{{.State.ExitCode}} {{.State.Status}}' "$1-init-1" 2>/dev/null; }
 
@@ -285,7 +314,7 @@ if echo "$out" | grep -q "DEPLOYED vtest.2" && [ "$(cat "$H3/release/VERSION")" 
 
 echo "== DEPLOYED"
 cat "$H/DEPLOYED"
-[ "$(wc -l < "$H/DEPLOYED")" = 7 ] && ok "seven deployments recorded" || bad "DEPLOYED has $(wc -l < "$H/DEPLOYED") lines"
+[ "$(wc -l < "$H/DEPLOYED")" = 9 ] && ok "nine deployments recorded" || bad "DEPLOYED has $(wc -l < "$H/DEPLOYED") lines"
 
 [ "$FAILED" = 0 ] && echo "== DEPLOY TEST PASSED" || echo "== DEPLOY TEST FAILED"
 exit "$FAILED"

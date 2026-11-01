@@ -6,7 +6,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
 # Two jobs: a parallel Rust build under a per-user pids limit (rootless
-# Docker in the lab) took the daemon down once (2026-10-07).
+# Docker in the lab) took the daemon down once.
 ENV CARGO_BUILD_JOBS=2
 
 RUN cargo build --release --locked

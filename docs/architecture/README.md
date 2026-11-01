@@ -1,6 +1,9 @@
 # Architecture
 
-![The containers](mailstack.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="mailstack-dark.svg">
+  <img alt="The containers" src="mailstack.svg">
+</picture>
 
 | Diagram | Kind | Source |
 |---|---|---|
@@ -12,17 +15,25 @@
 
 Each `.dot` renders with Graphviz; the `.py` scripts compute fixed positions
 and write their `.dot`, rendered with `neato -n2` (the first lines of each
-file say how). All five follow one set of rules: C4's notation, a key for
+file say how). Each has a dark twin (`NAME-dark.svg`, every colour mapped
+by Excalidraw's dark-theme rule) that GitHub shows in dark mode; write it
+again after a change with the Boring Diagrams kit's `tools/darkmode.py NAME.svg
+NAME-dark.svg`. All five follow one set of rules: C4's notation, a key for
 every symbol, no line through any text. Where the five share a symbol,
 it means the same: blue boxes are what you see and use, green boxes the
 stack's services, grey boxes the outside, dashed green a provenance record.
 
 ## The idea
 
-Mail stays with the providers: they receive it from the Internet, keep it
-and deliver what you send (with their DKIM). The stack never runs an MX and
-never deletes anything at a provider. Locally it keeps one canonical copy in
-Stalwart, which all clients use, and remembers where each mail came from.
+Providers receive internet mail and deliver outgoing mail through their
+submission services. The stack runs no MX and does not delete provider mail.
+It stores a local working copy in Stalwart, which local clients use, and
+remembers supported human placements. Provider retention and other clients
+can remove the original; imported history may exist only locally.
+
+This is not unrestricted two-way synchronisation. See
+[what travels where](../WORKING_WITH_MAILSTACK.md#what-travels-where) for
+provider changes, local filing and the limits of propagation.
 
 ## Inbound
 

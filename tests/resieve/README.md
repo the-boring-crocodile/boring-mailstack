@@ -39,7 +39,7 @@ the repository, mode 0700, and delete them when done.
 
 5. **Repeatable apply runs:** `tests/resieve/snapshot save|restore FIXTURE SNAPSHOT_DIR`.
 
-Results on 2026-10-07/08 (a real mailbox of 48,987 mails, a Roundcube
+Results (a real mailbox of 48,987 mails, a Roundcube
 filter with header tests):
 
 | resieve | dry run |

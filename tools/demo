@@ -278,7 +278,7 @@ def stop_and_wipe(demo):
         raise SystemExit(f"demo: no demo at {demo}")
     # The Compose project comes from the environment (DEMO_PROJECT); make sure
     # it is this directory's, so a teardown never hits another demo
-    # (incident 2026-10-07: the reading demo was taken down instead).
+    # (once: the reading demo was taken down instead).
     owner = next((l.split("=", 1)[1] for l in (demo / "etc" / ".env").read_text().splitlines()
                   if l.startswith("DEMO_PROJECT=")), None)
     if owner != PROJECT:

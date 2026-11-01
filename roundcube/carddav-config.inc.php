@@ -3,8 +3,9 @@
 // RCMCardDAV admin settings. Static and secret-free: there are no presets.
 // Presets are global -- every Roundcube user gets every preset -- so a
 // per-account preset with fixed credentials would hand one account's
-// Nextcloud to all users (DECISIONS.md, 2026-10-05). Each user adds their
-// own addressbook in Settings -> CardDAV instead.
+// Nextcloud to all users (DECISIONS.md, "CardDAV addressbooks are added by
+// each user, not configured by us"). Each user adds their own addressbook
+// in Settings -> CardDAV instead.
 
 // Users may add their own addressbooks (the only way in, without presets).
 $prefs['_GLOBAL']['fixed'] = false;

@@ -6,10 +6,10 @@ edition = "2021"
 license = "AGPL-3.0-only"
 
 [dependencies]
-sieve-rs = "=1.0.0"
-jmap-client = { version = "=0.4.2", default-features = false, features = ["blocking"] }
+sieve-rs = "=1.0.2"
+jmap-client = { version = "=0.4.3", default-features = false, features = ["blocking"] }
 # The version and features jmap-client already uses: a long-lived HTTP
 # client for blob downloads (src/download.rs), no new crates.
 reqwest = { version = "=0.13.5", default-features = false, features = ["rustls", "http2", "blocking", "json"] }
 serde_json = "=1.0.151"
-rusqlite = { version = "=0.40.0", default-features = false, features = ["bundled"] }
+rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled"] }

@@ -5,6 +5,42 @@ first. Versions are `vYYYY.M.N`: year, month, and the release count in that
 month. Every upgrade is `tools/deploy` of the new release (DEPLOY.md); a
 rollback is a redeploy of `release.previous/`.
 
+## v2026.11.1
+
+- **Stored mail must not expire:** provisioning explicitly sets Stalwart's
+  global `DataRetention.expungeTrashAfter` to `null`. Previously it left the
+  upstream 30-day Junk/Trash expiry unchanged. The new policy applies to all
+  accounts on first installation and when init provisions an existing stack.
+  An omitted setting is no longer treated as an explicit disabled value.
+- This prevents future age-based deletion; it does not recover expired mail.
+  Existing installations need the immediate mitigation in DEPLOY.md until
+  they deploy this change. Delivery-tracking and storage housekeeping remain
+  unchanged. Explicit user deletion and user-authored discard rules still work.
+- **Base images and locks updated** (Dependabot's proposals,
+  each checked by the acceptance test): the Python services on Python 3.14,
+  Alpine 3.24, the Roundcube build stages on alpine/git 2.52 and Node 26;
+  Roundcube's PHP packages (masterminds/html5 2.11, pear/crypt_gpg 2.0,
+  pear/http_request2 2.8); resieve's Rust crates (sieve-rs 1.0.2,
+  jmap-client 0.4.3, rusqlite 0.40.2). The browser-check image stays on
+  Playwright 1.55, now pinned with its tag.
+- **Authorship, truthfully:** README, CONTRIBUTING, DECISIONS and STORY say
+  that all of it — code, tests, docs — was written by AI, and that Wald
+  decided what to build, tested it, ran it and had the last word (they said
+  "much of the code ... reviewed and tested by Wald").
+- **Deploy:** `tools/deploy --check HOME` lists everything the deploy would
+  refuse, at once, and changes nothing. The smoke test checks that Stalwart
+  keeps stored mail without an expiry. A stack stopped before the deploy
+  stays stopped (`--start` starts it); a first install always starts.
+- **Docs:** USING.md says exactly when vacation replies go out (only to mail
+  naming your address, never to group addresses, lists, bulk or automatic
+  mail); the acceptance test proves the first two. README links to the
+  pages it names; the diagrams have dark-mode twins. README rewritten for
+  someone deciding whether the stack fits; the new
+  docs/WORKING_WITH_MAILSTACK.md covers daily use (what travels where,
+  reorganising old mail, Nextcloud, keeping history); DEPLOY.md recommends
+  HTTPS through a reverse proxy, with a Caddy example.
+- Nothing to do when upgrading besides the retention note above.
+
 ## v2026.10.15
 
 Documentation only: the demo described in README.md and docs/STORY.md as
@@ -99,8 +135,8 @@ Against v2026.10.13 (candidates rc.1 to rc.9).
   "Deleted Items", "Drafts") unless `etc/roundcube/config.inc.php` names
   others; HTML mail in dark mode (auto, invert, off; Settings > Preferences >
   Displaying Messages).
-- **Stalwart's spam filter stays off for fetched INBOX mail** (measured,
-  DECISIONS.md 2026-10-11): the provider judged it already.
+- **Stalwart's spam filter stays off for fetched INBOX mail** (measured;
+  DECISIONS.md, "No second spam filter on fetched mail"): the provider judged it already.
 
 ### Upgrade from v2026.10.13
 
@@ -283,8 +319,8 @@ Against v2026.10.13 (candidates rc.1 to rc.9).
 
 - Cloud files faster: Roundav sends the Nextcloud login up front and reuses
   Nextcloud's session (shared with the calendar and the identity check), and
-  loads the folder tree one level per request. Measured on a Nextcloud 35
-  (2026-10-07): a folder listing ~0.55 s with a fresh login, ~0.1 s in a
+  loads the folder tree one level per request. Measured on a Nextcloud 35:
+  a folder listing ~0.55 s with a fresh login, ~0.1 s in a
   session; opening "Attach from cloud" lists one folder instead of all
   top-level ones, with each folder's subfolder count from the same request
   (Nextcloud's `nc:contained-folder-count`), so expand arrows appear only

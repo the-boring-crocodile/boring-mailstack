@@ -19,7 +19,7 @@ FAST=5   # seconds; a clean stop must return before this
 P="graceful-stop-$LABEL"
 # Bind-mount sources must be visible to the Docker daemon. A private /tmp
 # (e.g. a sandboxed job runner) is not, and the daemon then silently mounts
-# an empty directory instead (observed 2026-10-06). Hence $HOME by default.
+# an empty directory instead. Hence $HOME by default.
 T=$(mktemp -d -p "${GRACEFUL_STOP_TMP:-$HOME}" graceful-stop.XXXXXX)
 FAILED=0
 

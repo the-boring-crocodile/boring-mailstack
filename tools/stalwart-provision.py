@@ -397,6 +397,11 @@ def reconcile_mta_throttles(apply):
 
 # Single objects: (object, what it is for, wanted fields).
 SINGLETONS = [
+    # A mirror must not expire stored mail, including Junk and Trash.
+    # Explicit null disables Stalwart\'s default 30-day expiry globally.
+    ("DataRetention", "keep stored mail until explicitly deleted", {
+        "expungeTrashAfter": None,
+    }),
     ("Jmap", "mailstack limits", {
         "maxConcurrentRequests": 4,
         "maxRequestSize": MAX_MESSAGE,
@@ -481,7 +486,7 @@ NAMED = [
     # The provenance sidecar, by its Compose service name. A changed URL
     # makes a new WebHook (changing an existing one's URL did not replace
     # its active sink in testing). Keyed by URL, so a webhook with an old
-    # URL is left behind (none since the names settled, 2026-10-06).
+    # URL is left behind (none since the names settled).
     ("WebHook", "url", "WebHook", "mail-provenance: human placements", {
         **WEBHOOK,
         "url": "http://mail-provenance:8080/",
@@ -537,7 +542,7 @@ NAMED = [
 
 
 def same(actual, wanted):
-    return {key: actual.get(key) for key in wanted} == wanted
+    return all(key in actual and actual[key] == value for key, value in wanted.items())
 
 
 def reconcile_settings(apply):
