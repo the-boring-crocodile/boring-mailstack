@@ -83,8 +83,8 @@ network you do not trust (a café's Wi-Fi), use `--bind 127.0.0.1` to keep
 it to this machine.
 
 **Safety:** getmail and the relay trust only the demo's own CA, and the
-mail network has no route to the Internet, so a demo cannot reach a real
-mail server, even by mistake. Stalwart and Roundcube are also on an
+mail network has no route to the Internet, so the demo's fetching and
+sending cannot reach a real mail server, even by mistake. Stalwart and Roundcube are also on an
 ordinary Docker network each (Stalwart needs DNS to start, Roundcube
 publishes its port), so those two can reach the Internet.
 

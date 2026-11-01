@@ -51,42 +51,33 @@ Releases are on the repository's releases page
 tarball, its `.sha256`, and the checksum of its `MANIFEST.sha256`, which a
 build of your own from the tag must match (below, "Building a release").
 
-**Get the release onto the Linux host first.** Open
-[GitHub Releases](https://github.com/the-boring-crocodile/boring-mailstack/releases),
-choose a release and read its notes. Under **Assets**, download
-`boring-mailstack-VERSION.tar.gz` and the matching `.tar.gz.sha256`.
-Use the packaged release, not GitHub's automatically generated “Source code”
-archive: the deploy tool expects the release manifest.
+**Get the release onto the Linux host.** Read the release's notes on
+[GitHub Releases](https://github.com/the-boring-crocodile/boring-mailstack/releases).
+Use the packaged release (`boring-mailstack-V.tar.gz` and its `.sha256`),
+not GitHub's automatically generated “Source code” archive: the deploy tool
+expects the release manifest. No Git clone is needed. Run the numbered steps
+in one shell, so that `R`, the unpacked release directory, stays set.
 
-If downloading on your desktop, copy both files to the same directory on
-the Linux host, for example with your SSH client's file-transfer pane.
-Open a shell on that host and `cd` to that directory. No Git clone is needed.
-
-Alternatively, copy each asset's download link from GitHub and download
-directly on the host (requires curl). Replace both placeholder URLs:
-
-```bash
-mkdir -p "$HOME/mailstack-download"
-cd "$HOME/mailstack-download"
-curl --fail --location --remote-name 'PASTE_ARCHIVE_ASSET_URL_HERE'
-curl --fail --location --remote-name 'PASTE_CHECKSUM_ASSET_URL_HERE'
-```
-
-The commands below use v2026.11.1 as an example artifact name, not a claim
-that it is the newest release. Substitute your downloaded version in all
-three places in step 1. Run the numbered steps in the same shell so that
-`R`, the unpacked release directory, remains available.
-
-1. **Check and unpack the release** as root into a fresh, empty directory
-   (deploy refuses files that are not in the release's manifest; unpacked
-   by root, no other user can change the files root will run):
+1. **Download, check and unpack the release** as root into a fresh, empty
+   directory (deploy refuses files that are not in the release's manifest;
+   unpacked by root, no other user can change the files root will run).
+   `V` is the release's tag; the newest is on the releases page:
 
    ```bash
-   sha256sum -c boring-mailstack-v2026.11.1.tar.gz.sha256
-   R=$(sudo mktemp -d)
-   sudo tar -xzf boring-mailstack-v2026.11.1.tar.gz -C "$R"
-   R=$R/boring-mailstack-v2026.11.1
+   V=v2026.11.2
+   f=boring-mailstack-$V.tar.gz
+   u=https://github.com/the-boring-crocodile/boring-mailstack/releases/download/$V
+   mkdir -p ~/Downloads && cd ~/Downloads
+   curl -fLO "$u/$f" && curl -fLO "$u/$f.sha256" &&
+   sha256sum -c "$f.sha256" &&            # must print OK; if not, the block stops here
+   R=$(sudo mktemp -d) &&
+   sudo tar -xzf "$f" -C "$R" &&
+   R=$R/boring-mailstack-$V && echo "release: $R"
    ```
+
+   It ends with `release:` and the directory. Without curl on the host,
+   download both files on your desktop, copy them into one directory on the
+   host, `cd` there and run the block from `sha256sum` on.
 
 2. **Write the home:**
 
@@ -222,16 +213,17 @@ images that `up -d` then uses.
 ## Upgrade
 
 Read the release's CHANGELOG.md entry first (some upgrades want a setting
-or a backup). Then steps 1 and 4 with the new release.
-
-Before step 4, `--check` shows what the deploy would refuse, all of it at
-once, and changes nothing (it builds nothing and leaves the stack running):
+or a backup). Then step 1 with the new release, and in the same shell:
 
 ```bash
-sudo $R/tools/deploy --check /opt/docker/boring-mailstack
+sudo $R/tools/deploy --check /opt/docker/boring-mailstack &&
+sudo $R/tools/deploy /opt/docker/boring-mailstack
 ```
 
-It ends with `checked:` or with a list of what to fix first. `accounts.yaml`
+`--check` shows what the deploy would refuse, all of it at once, and
+changes nothing (it builds nothing and leaves the stack running). It ends
+with `checked:`, and the deploy follows, or with a list of what to fix
+first, and the deploy does not run. `accounts.yaml`
 is validated by the new release's own image, so `--check` leaves that to the
 deploy unless the images are already built.
 

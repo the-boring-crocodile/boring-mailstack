@@ -490,3 +490,21 @@ server without changing provisioning. Both leave new installations exposed.
 
 **Evidence:** `tools/stalwart-provision.py`, `tests/unit/test_retention.py`.
 DEPLOY.md covers mitigation for older installations and verification.
+
+## Stalwart's server image is updated by hand
+
+**What:** Dependabot proposes every pinned image but the Stalwart server's.
+That one moves only in a release made for it.
+
+**Why:** Stalwart 1.0 cannot open a 0.16 data store. The move needs
+Stalwart's own migration into a new, empty store, from 0.16.27, with a
+backup first, and it is one-way: going back means migrating again. A
+monthly pull request cannot carry that, and merging one by mistake would
+leave the server unable to start on the existing mail. Patch releases
+within 0.16 are taken the same way, deliberately, with the acceptance test.
+
+**Rejected:** ignoring only major versions (the image is pinned by digest
+alone, so Dependabot has no version to compare); leaving the proposal open
+until the migration (an open pull request that must not be merged is a trap).
+
+**Evidence:** `.github/dependabot.yml`; the CHANGELOG entry of v2026.11.2.
