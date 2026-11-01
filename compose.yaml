@@ -30,7 +30,7 @@ services:
 
   stalwart:
     # 0.16.23, pinned by digest.
-    image: stalwartlabs/stalwart@sha256:be215678796691bc39bdda918ecc50d14a9032a099a1d1950e51950aec7e2592
+    image: stalwartlabs/stalwart@sha256:b9da4df8b4efc06bc926dd6e990bdeb0ad7b9261a7c3893d74b0461a00bb389b
     hostname: stalwart.mailstack.local
     environment:
       STALWART_RECOVERY_ADMIN: "${STALWART_RECOVERY_ADMIN:?Set in etc/.env}"
