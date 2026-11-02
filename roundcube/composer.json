@@ -20,7 +20,7 @@
         "roundcube/rtf-html-php": "^2.1",
         "symfony/polyfill-php85": "^1.33.0",
         "kolab/net_ldap3": "~1.1.4",
-        "roundcube/carddav": "5.1.4",
+        "roundcube/carddav": "5.1.5",
         "nicofrand/roundav": "3.2.0",
         "pear/http_request2": "~2.8.0",
         "sabre/vobject": "~4.5.1",

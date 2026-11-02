@@ -5,6 +5,22 @@ first. Versions are `vYYYY.M.N`: year, month, and the release count in that
 month. Every upgrade is `tools/deploy` of the new release (DEPLOY.md); a
 rollback is a redeploy of `release.previous/`.
 
+## v2026.11.3
+
+Security update of the webmail's address book plugin (Dependabot's
+proposal, checked by the acceptance test). Stalwart and the stored mail
+are unchanged.
+
+- **roundcube/carddav 5.1.5** with carddavclient 1.5.1 (security fixes):
+  account credentials go only to the address book's own origin; error
+  messages no longer show the bodies of HTTP responses; a contact photo
+  given only as a URL is no longer downloaded by the webmail server, so
+  such contacts show Roundcube's placeholder picture. Photos stored in the
+  contact itself show as before.
+- With it: guzzlehttp/guzzle 7.16.1, guzzlehttp/promises 2.6.0,
+  guzzlehttp/psr7 2.13.2.
+- Nothing to do when upgrading; a rollback to v2026.11.2 works as usual.
+
 ## v2026.11.2
 
 Dependency updates (Dependabot's proposals, each checked by the acceptance
